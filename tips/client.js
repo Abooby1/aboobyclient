@@ -21,7 +21,7 @@ client.onReady(ready => {
 
 client.post('text', 'group', ['images'])//posts in the home page if no groupid is given
 
-client.userData()//returns: {user: "own userdata", groups: "groups bot is in"}
+await client.userData()//returns: {user: "own userdata", groups: "groups bot is in"}
 
 client.notify('userid', {
   title: 'bot notification',
