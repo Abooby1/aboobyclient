@@ -34,3 +34,6 @@ client.getUserById("userid")//returns user data by id
 client.getUserByName("username")//returns user data by name
 
 client.joinGroup("groupid")//joins the group if bot is invited
+
+client.deletePost("postid")//deletes the post given
+client.deleteChat("chatid")//deletes the chat given
