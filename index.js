@@ -325,6 +325,15 @@ export class Client {
         let response = await request(url('groups/join?groupid=' + id), 'PUT', undefined, this.auth)
         return response;
     }
+
+    async deletePost(id) {
+        let response = await request(url('posts/delete?postid=' + id), 'DELETE', undefined, this.auth)
+        return response;
+    }
+    async deleteChat(id) {
+        let response = await request(url('chats/delete?chatid=' + id), 'DELETE', undefined, this.auth)
+        return response;
+    }
 }
 
 class user {
@@ -405,6 +414,10 @@ class post {
     }
     async pin() {
         let response = await request(url('posts/pin?postid=' + this.post._id), 'PUT', {}, auth)
+        return response;
+    }
+    async unpin() {
+        let response = await request(url('posts/unpin?postid=' + this.post._id), 'DELETE', {}, auth)
         return response;
     }
 
@@ -507,10 +520,7 @@ class groupInvite {
     constructor(response) {
         this.group = response
     }
-
-    async invites() {
-        return JSON.parse(await request(url('groups/invites'), 'GET', undefined, auth)).invites
-    }
+    
     async accept() {
         let response = await request(url('groups/join?groupid=' + this.group._id), 'PUT', {}, auth)
         return response;
@@ -521,4 +531,3 @@ class groupInvite {
         return response;
     }
 }
-
