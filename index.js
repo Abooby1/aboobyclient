@@ -96,11 +96,37 @@ async function format(type, data) {
     }
 }
 
+let botConfigurations = {
+    photopstats:false,
+    postConnections:true
+}
+function justifyConfigs(configs) {
+    Object.keys(configs).forEach(config => {
+        switch (config) {
+            case 'photopstats':
+                botConfigurations.photopstats = configs[config];
+                break;
+            case 'groupConnection':
+                botConfigurations.postConnections = configs[config];
+                break;
+
+            default:
+                throw new Error(`Configuration ${config} doesnt exist.`)
+        }
+    })
+}
+
 let onPost = [];
 let onInvite = [];
 let onMention = [];
 let onReady = [];
+let onDelete = [];
+let onLike = {};
+
 let chatConnects = [];
+let posts = [];
+
+let postSocketConnection;
 
 let botData;
 var loaded = false;
@@ -111,21 +137,50 @@ var a = setInterval(async function() {
     botData = JSON.parse(await request(url('me'), 'GET', undefined, auth))
     clearInterval(a)
     setTimeout(async function() {
-        socket.subscribe({
+        let query = {
             task: "general",
-            location: "home",
-            groups: await format('groupIds', JSON.parse(await request(url('me'), 'GET', undefined, auth)).groups)
-        }, async function(data) {
+            location: "home"
+        }
+        if (botConfigurations.postConnections) {
+            query.groups = await format('groupIds', JSON.parse(await request(url('me'), 'GET', undefined, auth)).groups)
+        }
+        socket.subscribe(query, async function(data) {
             if (data.type != 'newpost') return;
+            posts.push(data.post._id)
             try {
-                let postText = JSON.parse(await request(url('posts?postid=' + data.post._id), 'GET')).posts[0].Text
+                let postData = JSON.parse(await request(url('posts?postid=' + data.post._id), 'GET')).posts[0]
+                let postText = postData.Text
                 if (postText.includes(`@${botData.user._id}`)) {
                     let mentionUserData = JSON.parse(await request(url('user?id=' + data.post.UserID), 'GET'))
                     onMention.forEach(async mentionConnection => {
-                        mentionConnection(new user(mentionUserData))
+                        mentionConnection({
+                            user: new user(mentionUserData),
+                            post: new post(postData)
+                        })
                     })
                 }
             }catch(err){}
+
+            let query = {
+                task: 'post',
+                _id: posts
+            }
+            if (postSocketConnection) {
+                postSocketConnection.edit(query)
+            } else {
+                postSocketConnection = socket.subscribe(query, async function(data) {
+                    switch (data.type) {
+                        case 'delete':
+                            onDelete.forEach(deleteConnection => {
+                                deleteConnection({
+                                    type: 'post',
+                                    data: new deletedPost(data)
+                                })
+                            })
+                            break;
+                    }
+                })
+            }
 
             let groupId = data.post.GroupID?`&groupid=${data.post.GroupID}`:''
             let postData = JSON.parse(await request(url('posts?postid=' + data.post._id + groupId), 'GET', undefined, auth)).posts[0]
@@ -161,6 +216,14 @@ socket.remotes.stream = async function(data) {
                 }
             })
             break;
+        case 'chatdelete':
+            onDelete.forEach(deleteConnection => {
+                deleteConnection({
+                    type: 'chat',
+                    data: new deletedChat(data)
+                })
+            })
+            break;
     }
 }
 let auth;
@@ -169,7 +232,38 @@ export class Client {
         auth = `${config.userid};${config.token}`
         this.auth = `${config.userid};${config.token}`
 
+        if (config.config) {
+            justifyConfigs(config.config)
+        }
+
         loaded = true;
+    }
+
+    onPost(callback, groupId) {
+        if (groupId) {
+            socket.subscribe({
+                task: "general",
+                location: "home",
+                groups: [groupId]
+            }, async function(postData) {
+                postData = JSON.parse(await request(url('posts?postid=' + data.post._id), 'GET', undefined, auth)).posts[0]
+                callback(new post(postData))
+            })
+            return;
+        }
+        onPost.push(callback)
+    }
+    onInvite(callback) {
+        onInvite.push(callback)
+    }
+    onMention(callback) {
+        onMention.push(callback)
+    }
+    onReady(callback) {
+        onReady.push(callback)
+    }
+    onDelete(callback) {
+        onDelete.push(callback)
     }
 
     async post(text, group, images = []) {
@@ -186,22 +280,13 @@ export class Client {
             }
         })
         let response = await response1.text()
+
+        if (botConfigurations.photopstats) {
+            aboobySocket.publish({task: 'botPost'}, {})
+        }
+
         return new post(response, group)
     }
-
-    onPost(callback) {
-        onPost.push(callback)
-    }
-    onInvite(callback) {
-        onInvite.push(callback)
-    }
-    onMention(callback) {
-        onMention.push(callback)
-    }
-    onReady(callback) {
-        onReady.push(callback)
-    }
-
     async userData() {
         let response = await request(
             url('me'),
@@ -214,6 +299,14 @@ export class Client {
             user: new user(response.user),
             groups: await format('groups', response.groups)
         }
+    }
+    async notify(userid, config) {
+        if (!userid) return;
+        if (!config) return;
+        if (!config.title) return;
+        if (!config.content) return;
+
+        aboobySocket.publish({task: 'sendNotif'}, {title: config.title, content: config.content, userId: userid, authorId:botData.user._id})
     }
 
     async getPostById(id) {
@@ -231,15 +324,6 @@ export class Client {
     async joinGroup(id) {
         let response = await request(url('groups/join?groupid=' + id), 'PUT', undefined, this.auth)
         return response;
-    }
-
-    async notify(userid, config) {
-        if (!userid) return;
-        if (!config) return;
-        if (!config.title) return;
-        if (!config.content) return;
-
-        aboobySocket.publish({task: 'sendNotif'}, {title: config.title, content: config.content, userId: userid, authorId:botData.user._id})
     }
 }
 
@@ -273,6 +357,25 @@ class user {
             parsed: await format('status', this.userData.Status),
             raw: this.userData.Status
         }
+    }
+    async report(reason, report) {
+        let response = await request(url('mod/report?contentid=' + this.id + '&type=user'), 'PUT', {
+            reason: reason,
+            report: report
+        }, auth)
+        return response;
+    }
+    async ban(length, reason, terminate = false) {
+        let response = await request(url('mod/ban?userid=' + this.id), 'DELETE', {
+            length: length,
+            reason: reason,
+            terminate: terminate
+        }, auth)
+        return response;
+    }
+    async unban() {
+        let response = await request(url('mod/unban?userid=' + this.id), 'PATCH', undefined, auth)
+        return response;
     }
 }
 
@@ -309,6 +412,13 @@ class post {
         const response = await request(url(`posts/delete?postid=${this.post._id}`), 'DELETE', undefined, auth)
         return response;
     }
+    async report(reason, report) {
+        let response = await request(url('mod/report?contentid=' + this.id + '&type=post'), 'PUT', {
+            reason: reason,
+            report: report
+        }, auth)
+        return response;
+    }
     async onChat(callback) {
         let groupId = (this.group?'?groupid=' + this.group:'')
         chatConnects.push([this.post._id, callback])
@@ -321,6 +431,15 @@ class post {
             text: text
         }, auth)
         return response;
+    }
+}
+class deletedPost {
+    constructor(response) {
+        this.post = response
+    }
+
+    get id() {
+        return this.post._id
     }
 }
 
@@ -345,6 +464,22 @@ class chat {
             replyID: this.chat._id
         }, auth)
         return response;
+    }
+    async report(reason, report) {
+        let response = await request(url('mod/report?contentid=' + this.id + '&type=chat'), 'PUT', {
+            reason: reason,
+            report: report
+        }, auth)
+        return response;
+    }
+}
+class deletedChat {
+    constructor(response) {
+        this.chat = response
+    }
+
+    get id() {
+        return this.chat.chatID
     }
 }
 
@@ -386,3 +521,4 @@ class groupInvite {
         return response;
     }
 }
+
