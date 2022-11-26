@@ -17,5 +17,8 @@ post.report("reason", "report")//reports the post
 post.onChat(callback => {
   //check onChat.js for information
 })
+post.onLike(callback => {
+  //check onLike.js for information
+})
 
 post.chat("text")//chats in a post without reply
