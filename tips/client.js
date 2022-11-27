@@ -37,3 +37,6 @@ client.joinGroup("groupid")//joins the group if bot is invited
 
 client.deletePost("postid")//deletes the post given
 client.deleteChat("chatid")//deletes the chat given
+
+client.updateBio("new bio")//changes the bots bio
+client.updateUsername("new username")//changes the bots username
