@@ -19,16 +19,16 @@ client.onReady(ready => {
   //logs "Ready!" when your bot is up and running
 })
 
-client.post('text', 'group', ['images'])//posts in the home page if no groupid is given
-
-await client.userData()//returns: {user: "own userdata", posts: "array of posts | up to 100", groups: "groups bot is in"}
-
 client.notify('userid', {
   title: 'bot notification',
   content: 'this uses BetterPhotop, if a user isnt using BetterPhotop it wont work'
 })
 
+client.post('text', 'group', ['images'])//posts in the home page if no groupid is given
+
 client.getPostById("postid")//returns post data
+
+await client.userData()//returns: {user: "own userdata", posts: "array of posts | up to 100", groups: "groups bot is in"}
 
 await client.getUserById("userid")//returns user data by id
 await client.getUserByName("username")//returns user data by name
