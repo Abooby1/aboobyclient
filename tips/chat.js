@@ -5,6 +5,9 @@ client.onPost(post => {
     chat.text//returns the text of the chat
     chat.reply("text")//replies to the chat
     
+    chat.delete()//deletes chat sent by you
+    chat.edit("text")//edits chat sent by you
+    
     chat.report("reason", "report")//reports the chat
   })
 })
