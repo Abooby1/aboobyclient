@@ -9,4 +9,5 @@ chat.report("reason", "report")//reports the chat
 
 //self chat
 chat.delete()//deletes chat
+//premium
 chat.edit("text")//edits chat
