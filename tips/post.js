@@ -12,6 +12,7 @@ post.pin()//pins the post if the post is yours
 post.unpin()//unpins the post if the post is yours
 
 post.delete()//deletes the post if its yours
+post.edit("text", ["images"])//edits the post if bot has premium
 post.report("reason", "report")//reports the post
 
 post.onChat(callback => {
