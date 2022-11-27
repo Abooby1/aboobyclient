@@ -11,15 +11,17 @@ user.settings.profileBanner//profile banner id of the user
 user.settings.description//bio of the user
 user.settings.visibility//visibility of the user
 
-user.follows.following//number of people user is following
-user.follows.followers//number of people following the user
-
 user.status().raw//raw number status
 user.status().parsed//returns: status of user, "online", "offline", "group"
 
-user.report("reason", "report")//reports a user
-user.ban("length", "reason", "terminate")//ban the user selected | length: required, reason: required, terminate: optional
-user.unban()//unbans a user
+user.follows.following//number of people user is following
+user.follows.followers//number of people following the user
 
 user.follow()//follows the given user
 user.unfollow()//unfollows the given user
+
+user.report("reason", "report")//reports a user
+
+//mod
+user.ban("length", "reason", "terminate")//ban the user selected | length: required, reason: required, terminate: optional
+user.unban()//unbans a user
