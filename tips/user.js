@@ -20,3 +20,6 @@ user.status().parsed//returns: status of user, "online", "offline", "group"
 user.report("reason", "report")//reports a user
 user.ban("length", "reason", "terminate")//ban the user selected | length: required, reason: required, terminate: optional
 user.unban()//unbans a user
+
+user.follow()//follows the given user
+user.unfollow()//unfollows the given user
