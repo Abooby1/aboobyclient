@@ -30,8 +30,8 @@ client.notify('userid', {
 
 client.getPostById("postid")//returns post data
 
-client.getUserById("userid")//returns user data by id
-client.getUserByName("username")//returns user data by name
+await client.getUserById("userid")//returns user data by id
+await client.getUserByName("username")//returns user data by name
 
 client.joinGroup("groupid")//joins the group if bot is invited
 
