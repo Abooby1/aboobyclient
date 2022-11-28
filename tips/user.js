@@ -1,6 +1,6 @@
 let user = await client.getUserById("6154f0d0a8d6d106c5b869b6") // you need an async function for this to work
 
-//if a users visibility is not "Public" most of the properties will be undefined
+user.classStatus//returns false if user privacy is not public, otherwise, itll return true
 
 user.id//userid of the user
 user.username//username of the user
