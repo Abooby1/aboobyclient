@@ -41,3 +41,4 @@ client.deleteChat("chatid")//deletes the chat given
 client.updateBio("new bio")//changes the bots bio
 client.updateUsername("new username")//changes the bots username
 client.updateVisibility("new visibility | 'public', 'private', 'following'")//changes the bots profile visibility
+client.updateProfilePic("./aboobyclient.png")//changes the bots profile picture, file is needed
