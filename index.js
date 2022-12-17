@@ -1,6 +1,7 @@
 import fetch from "node-fetch"
 import FormData from "form-data"
 import SimpleSocket from "simple-socket-js"
+import fs from 'fs'
 import { response } from "express"
 const socket = new SimpleSocket({
     project_id: "61b9724ea70f1912d5e0eb11",
@@ -227,6 +228,7 @@ var a = setInterval(async function() {
 socket.remotes.stream = async function(data) {
     switch (data.type) {
         case 'chat':
+            try {
             let chatData = JSON.parse(await request(url('chats?chatid=' + data.chat._id), 'GET')).chats[0]
             let userData = JSON.parse(await request(url('user?id=' + data.chat.UserID), 'GET'))
             chatConnects.forEach(chatConnection => {
@@ -235,6 +237,14 @@ socket.remotes.stream = async function(data) {
                     callback(new chat(chatData, userData))
                 }
             })
+            } catch(err) {
+                chatConnects.forEach(chatConnection => {
+                    let [postId, callback] = chatConnection;
+                    if (data.chat.PostID == postId) {
+                        callback('Chat error.')
+                    }
+                })
+            }
             break;
         case 'chatdelete':
             onDelete.forEach(deleteConnection => {
@@ -249,9 +259,11 @@ socket.remotes.stream = async function(data) {
 let auth;
 export class Client {
     constructor(config) {
-        if (botData) return;
+        if (botData)  {
+            throw new Error('Bot has already been connected in this project.')
+        }
         if (!config.token.startsWith('bot_')) {
-            throw new Error('Only bot tokens can be used with aboobyclient...')
+            throw new Error('Only bot tokens can be used with aboobyclient.')
         }
         auth = `${config.userid};${config.token}`
         this.auth = `${config.userid};${config.token}`
