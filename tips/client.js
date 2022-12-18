@@ -26,10 +26,18 @@ client.notify('userid', {
 
 client.post('text', 'group', ['images'])//posts in the home page if no groupid is given
 
-client.getPostById("postid")//returns post data
-await client.getUserById("userid")//returns user data by id
-await client.getUserByName("username")//returns user data by name
-await client.getGroupById("groupid")//returns group data
+client.getPostById("postid").then(callback => {
+  //returns post data in callback
+})
+client.getUserById("userid").then(callback => {
+  //returns user data by id in callback
+})
+client.getUserByName("username").then(callback => {
+  //returns user data by name in callback
+})
+client.getGroupById("groupid").then(callback => {
+  //returns group data in callback
+})
 
 await client.userData()//returns: {user: "own userdata", posts: "array of posts | up to 100", groups: "groups bot is in"}
 
@@ -42,3 +50,4 @@ client.updateBio("new bio")//changes the bots bio
 client.updateUsername("new username")//changes the bots username
 client.updateVisibility("new visibility | 'public', 'private', 'following'")//changes the bots profile visibility
 client.updateProfilePic("./aboobyclient.png")//changes the bots profile picture, file is needed
+client.updateBanner("./aboobyclient.png")//changes the bots banner, file is needed
