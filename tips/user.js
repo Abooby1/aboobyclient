@@ -3,6 +3,7 @@ client.getUserById("6154f0d0a8d6d106c5b869b6").then(user => {
 
   user.id//userid of the user
   user.username//username of the user
+  user.ping//returns the format that pings the user
   user.roles//more than one role: array | one role: string
 
   user.settings.profilePicture//profile picture id of the user
