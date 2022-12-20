@@ -134,6 +134,17 @@ let onLike = {};
 let chatConnects = [];
 let posts = [];
 
+let rate = {
+    post: {
+        amount: 0,
+        time: 0
+    },
+    chat: {
+        amount: 0,
+        time: 0
+    }
+}
+
 let postSocketConnection;
 
 let botData;
@@ -473,8 +484,14 @@ class user {
         this.userData = userData
     }
 
+    get ping() {
+        return `@${this.userData._id}"${this.userData.User}"`
+    }
     get id() {
         return this.userData._id
+    }
+    get username() {
+        return this.userData.User
     }
     get roles() {
         return this.userData.Role
