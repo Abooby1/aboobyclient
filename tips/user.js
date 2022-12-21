@@ -1,5 +1,6 @@
 client.getUserById("6154f0d0a8d6d106c5b869b6").then(user => {
   user.classStatus//returns false if user privacy is not public, otherwise, itll return true
+  user.bot//returns false if the user is the bot and true if its not
 
   user.id//userid of the user
   user.username//username of the user
