@@ -124,6 +124,10 @@ function justifyConfigs(configs) {
     })
 }
 
+let onEdit = {
+    chat: [],
+    post: []
+}
 let onPost = [];
 let onInvite = [];
 let onMention = [];
@@ -210,6 +214,11 @@ var a = setInterval(async function() {
                                 })
                             })
                             break;
+                        case 'edit':
+                            onEdit.post.forEach(postedit => {
+                                postedit(new editedPost(data))
+                            })
+                            break;
                     }
                 })
             }
@@ -277,6 +286,11 @@ socket.remotes.stream = async function(data) {
                     type: 'chat',
                     data: new deletedChat(data)
                 })
+            })
+            break;
+        case 'chatedit':
+            onEdit.chat.forEach(chatedit => {
+                chatedit(new editedChat(data))
             })
             break;
     }
@@ -591,6 +605,9 @@ class post {
     async onLike(callback) {
         onLike[this.id] = callback;
     }
+    async onEdit(callback) {
+        onEdit.post.push(callback)
+    }
     async chat(text) {
         let response = await request(url('chats/new?postid=' + this.post._id), 'POST', {
             text: text
@@ -644,6 +661,18 @@ class deletedPost {
         return this.post._id
     }
 }
+class editedPost {
+    constructor(response) {
+        this.post = response
+    }
+
+    get id() {
+        return this.post._id
+    }
+    get text() {
+        return this.post.text
+    }
+}
 
 class chat {
     constructor(chat, user) {
@@ -675,6 +704,10 @@ class chat {
         }, auth)
         return response;
     }
+
+    async onEdit(callback) {
+        onEdit.chat.push(callback)
+    }
 }
 class selfChat extends chat {
     constructor(response) {
@@ -700,6 +733,18 @@ class deletedChat {
 
     get id() {
         return this.chat.chatID
+    }
+}
+class editedChat {
+    constructor(response) {
+        this.chat = response
+    }
+
+    get id() {
+        return this.chat.chatID
+    }
+    get text() {
+        return this.chat.text
     }
 }
 
