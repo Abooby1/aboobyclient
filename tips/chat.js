@@ -5,6 +5,10 @@ client.getChatById("6383dfd8f06958b583a92436").then(chat => {
   chat.text//returns the text of the chat
   chat.reply("text")//replies to the chat
   chat.report("reason", "report")//reports the chat
+  
+  chat.onEdit(callback => {
+    //check onEdit.js for more information
+  })
 
   //self chat
   chat.delete()//deletes chat
