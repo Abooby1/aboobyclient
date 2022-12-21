@@ -18,6 +18,9 @@ client.getPostById("638253dad62f9d79c6459c86").then(post => {
   post.onLike(callback => {
     //check onLike.js for information
   })
+  post.onEdit(callback => {
+    //check onEdit.js for information
+  })
 
   //self
   post.pin()//pins the post if the post is yours
