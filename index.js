@@ -484,6 +484,9 @@ class user {
         this.userData = userData
     }
 
+    get bot() {
+        return this.userData._id == botData.user._id?false:true;
+    }
     get ping() {
         return `@${this.userData._id}"${this.userData.User}"`
     }
