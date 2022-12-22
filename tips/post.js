@@ -1,4 +1,6 @@
 client.getPostById("638253dad62f9d79c6459c86").then(post => {
+  //utilities
+  post.cache()//adds post data to client.postCache
   //general
   post.id//returns id of the post
   post.author//returns the author of the post | check user.js for the properties extending this property
