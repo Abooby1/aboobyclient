@@ -135,6 +135,8 @@ let onReady = [];
 let onDelete = [];
 let onLike = {};
 
+let postcache = [];
+
 let chatConnects = [];
 let posts = [];
 
@@ -312,6 +314,10 @@ export class Client {
         }
 
         loaded = true;
+    }
+    
+    get postCache() {
+        return postcache;
     }
 
     onPost(callback, groupId) {
@@ -586,6 +592,10 @@ class post {
             quotes: this.post.Quotes,
             chats: this.post.Chats
         }
+    }
+    
+    cache() {
+        postcache.push(new post(this.post, this.authorData, this.group))
     }
 
     async report(reason, report) {
