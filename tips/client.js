@@ -39,6 +39,8 @@ client.getGroupById("groupid").then(callback => {
   //returns group data in callback
 })
 
+client.postCache//returns an array containing post data cached with post.cache()
+
 await client.userData()//returns: {user: "own userdata", posts: "array of posts | up to 100", groups: "groups bot is in"}
 
 client.joinGroup("groupid")//joins the group if bot is invited
