@@ -173,7 +173,7 @@ var a = setInterval(async function() {
             if (data.type != 'newpost') return;
             posts.push(data.post._id)
             try {
-                let postData = JSON.parse(await request(url('posts?postid=' + data.post._id), 'GET')).posts[0]
+                let postData = JSON.parse(await request(url('posts?postid=' + data.post._id + (data.post.GroupID?`&groupid=${data.post.GroupID}`:'')), 'GET', undefined, auth)).posts[0]
                 let postText = postData.Text
                 if (postText.includes(`@${botData.user._id}`)) {
                     let mentionUserData = JSON.parse(await request(url('user?id=' + data.post.UserID), 'GET'))
@@ -230,7 +230,7 @@ var a = setInterval(async function() {
             let userData;
             try {
                 userData = JSON.parse(await request(url('user?id=' + data.post.UserID), 'GET'))
-            }catch(err) {userData = 'visibility error'}
+            }catch(err) {}
             onPost.forEach(postConnection => {
                 postConnection(new post(postData, data.GroupID, userData))
             })
@@ -253,9 +253,11 @@ var a = setInterval(async function() {
 socket.remotes.stream = async function(data) {
     switch (data.type) {
         case 'chat':
-            try {
             let chatData = JSON.parse(await request(url('chats?chatid=' + data.chat._id), 'GET')).chats[0]
-            let userData = JSON.parse(await request(url('user?id=' + data.chat.UserID), 'GET'))
+            let userData;
+            try {
+                userData = JSON.parse(await request(url('user?id=' + data.chat.UserID), 'GET'))
+            }catch(err) {}
             if (chatData.Text.includes(`@${botData.user._id}`)) {
                 onMention.forEach(async mentionConnection => {
                     mentionConnection({
@@ -273,14 +275,6 @@ socket.remotes.stream = async function(data) {
                     callback(new chat(chatData, userData))
                 }
             })
-            } catch(err) {
-                chatConnects.forEach(chatConnection => {
-                    let [postId, callback] = chatConnection;
-                    if (data.chat.PostID == postId) {
-                        callback('Chat error.')
-                    }
-                })
-            }
             break;
         case 'chatdelete':
             onDelete.forEach(deleteConnection => {
@@ -330,6 +324,17 @@ export class Client {
                 if (!postData.post.GroupID) return;
                 let userData = JSON.parse(await request(url('user?id=' + postData.post.UserID), 'GET'))
                 postData = JSON.parse(await request(url('posts?postid=' + postData.post._id + '&groupid=' + groupId), 'GET', undefined, auth)).posts[0]
+                if (postText.includes(`@${botData.user._id}`)) {
+                    onMention.forEach(async mentionConnection => {
+                        mentionConnection({
+                            user: new user(userData),
+                            data: {
+                                type: 'post',
+                                data: new post(postData, groupId, userData)
+                            }
+                        })
+                    })
+                }
                 callback(new post(postData, groupId, userData))
             })
             return;
@@ -581,6 +586,9 @@ class post {
         return this.post._id
     }
     get author() {
+        if (!this.authorData) {
+            return 'User data missing.'
+        }
         return new user(this.authorData)
     }
     get text() {
@@ -690,6 +698,9 @@ class chat {
         Object.defineProperty(this, 'authorData', {value: user})
     }
     get author() {
+        if (!this.authorData) {
+            return 'User data missing.'
+        }
         return new user(this.authorData)
     }
     get id() {
