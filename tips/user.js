@@ -12,8 +12,8 @@ client.getUserById("6154f0d0a8d6d106c5b869b6").then(user => {
   user.settings.description//bio of the user
   user.settings.visibility//visibility of the user
 
-  user.status().raw//raw number status
-  user.status().parsed//returns: status of user, "online", "offline", "group"
+  await user.status().raw//raw number status
+  await user.status().parsed//returns: status of user, "online", "offline", "group"
 
   user.follows.following//number of people user is following
   user.follows.followers//number of people following the user
