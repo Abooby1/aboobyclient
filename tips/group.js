@@ -2,7 +2,9 @@ client.getGroupById("6335c42a3402fdba72620e37").then(group => {
   group.id//returns the id of the group
   group.name//returns the name of the group
   group.owner//returns the id of the groups owner
-  group.users()//returns the users of the group in an array
+  group.getUsers(users => {
+    //returns array of users in group
+  })
 
   group.leave()//leave the given group
   group.invite("userid")//invite someone to the group
