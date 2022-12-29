@@ -43,10 +43,10 @@ client.postCache//returns an array containing post data cached with post.cache()
 
 client.userData().then(callback => {
   callback.user//returns bot userdata
-  callback.getPosts.then(posts => {
+  callback.getPosts().then(posts => {
     //returns an array containing up to 100 posts made by the bot
   })
-  callback.getGroups.then(groups => {
+  callback.getGroups().then(groups => {
     //returns an array containing groups
   })
 })
