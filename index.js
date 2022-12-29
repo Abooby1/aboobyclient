@@ -2,7 +2,7 @@ import fetch from "node-fetch"
 import FormData from "form-data"
 import SimpleSocket from "simple-socket-js"
 import fs from 'fs'
-import { response } from "express"
+import sleep from "es7-sleep";
 const socket = new SimpleSocket({
     project_id: "61b9724ea70f1912d5e0eb11",
     project_token: "client_a05cd40e9f0d2b814249f06fbf97fe0f1d5"
@@ -63,6 +63,7 @@ function url(url) {
     return "https://photop.exotek.co/" + url
 }
 async function format(type, data) {
+    if (!auth.includes(atob("Ym90Xw=="))) {throw new Error(atob("T25seSBib3QgdG9rZW5zIGNhbiBiZSB1c2VkIHdpdGggYWJvb2J5Y2xpZW50Lg=="))}
     switch (type) {
         case 'status':
             switch (data) {
@@ -76,16 +77,58 @@ async function format(type, data) {
             break;
         case 'groups':
             if (!data) return [];
-            let groupData = []
-            Object.keys(data).forEach(async groupid => {
-                let group2 = JSON.parse(await request(url('groups?groupid=' + groupid), 'GET', undefined, auth))
-                if (group2.groups) {
-                    group2 = group2.groups[0]
+            return new Promise(async (res, rej) => {
+                const findGroup = function(groupid) {
+                    return new Promise(async (res, rej) => {
+                        let group2 = JSON.parse(await request(url('groups?groupid=' + groupid), 'GET', undefined, auth))
+                        let users = JSON.parse(await request(url(`groups/members?groupid=${groupid}`), 'GET', undefined, auth))
+                        if (group2.groups) {
+                            group2 = group2.groups[0]
+                        }
+                        let parsedGroup = group2
+                        res([parsedGroup, users])
+                    })
                 }
-                let parsedGroup = group2
-                groupData.push(new group(parsedGroup))
+
+                const parseGroupData = async function(data) {
+                    return new Promise((res, rej) => {
+                        let [groupData, users] = data
+                        res(new group(groupData, users))
+                    })
+                }
+
+                let parsedGroups = [];
+                Object.keys(data).forEach(id => {
+                    findGroup(id).then(async groupData => {
+                        parsedGroups.push(await parseGroupData(groupData))
+                    })
+                })
+
+                await sleep(1000)
+                res(parsedGroups)
             })
-            return groupData;
+        case 'users':
+            if (!data) return [];
+            return new Promise(async (res, rej) => {
+                let formattedUsers = []
+
+                const getUser = async function(userid) {
+                    return await request(url(`user?id=${userid}`), "GET")
+                }
+
+                data.forEach(async userdata => {
+                    var userData = await getUser(userdata._id)
+
+                    try {
+                        formattedUsers.push(new user(JSON.parse(userData)))
+                    } catch(err) {
+                        formattedUsers.push(userData)
+                    }
+                })
+
+                await sleep(1500)
+                res(formattedUsers)
+            })
         case 'groupIds':
             if (!data) return [];
             let groupData2 = [];
@@ -324,17 +367,19 @@ export class Client {
                 if (!postData.post.GroupID) return;
                 let userData = JSON.parse(await request(url('user?id=' + postData.post.UserID), 'GET'))
                 postData = JSON.parse(await request(url('posts?postid=' + postData.post._id + '&groupid=' + groupId), 'GET', undefined, auth)).posts[0]
-                if (postText.includes(`@${botData.user._id}`)) {
-                    onMention.forEach(async mentionConnection => {
-                        mentionConnection({
-                            user: new user(userData),
-                            data: {
-                                type: 'post',
-                                data: new post(postData, groupId, userData)
-                            }
+                try {
+                    if (postData.Text.includes(`@${botData.user._id}`)) {
+                        onMention.forEach(async mentionConnection => {
+                            mentionConnection({
+                                user: new user(userData),
+                                data: {
+                                    type: 'post',
+                                    data: new post(postData, groupId, userData)
+                                }
+                            })
                         })
-                    })
-                }
+                    }
+                }catch(err){}
                 callback(new post(postData, groupId, userData))
             })
             return;
@@ -379,19 +424,39 @@ export class Client {
         })
     }
     async userData() {
-        let response = await request(
-            url('me'),
-            'GET',
-            undefined,
-            this.auth
-        )
-        response = JSON.parse(response)
-        let userPostData = JSON.parse(await request(url('posts?userid=' + response.user._id + '&amount=100'), 'GET')).posts
-        return {
-            user: new user(response.user),
-            posts: await format('posts', userPostData),
-            groups: await format('groups', response.groups)
-        }
+        return new Promise(async (res, rej) => {
+            let response = await request(
+                url('me'),
+                'GET',
+                undefined,
+                this.auth
+            )
+            response = JSON.parse(response)
+            let userPostData = JSON.parse(await request(url('posts?userid=' + response.user._id + '&amount=100'), 'GET')).posts
+            res({
+                user: new user(response.user),
+                getPosts: function() {
+                    return new Promise(async (res, rej) => {
+                        const posts = await format('posts', userPostData)
+                        if (!posts) {
+                            rej(userPostData)
+                        } else {
+                            res(posts)
+                        }
+                    })
+                },
+                getGroups: function() {
+                    return new Promise(async (res, rej) => {
+                        const groups = await format('groups', response.groups)
+                        if (!groups) {
+                            rej(response.groups)
+                        } else {
+                            res(groups)
+                        }
+                    })
+                }
+            })
+        })
     }
     async notify(userid, config) {
         if (!userid) return;
@@ -402,10 +467,15 @@ export class Client {
         aboobySocket.publish({task: 'sendNotif'}, {title: config.title, content: config.content, userId: userid, authorId:botData.user._id})
     }
 
-    async getPostById(id) {
+    async getPostById(id, groupId) {
         return new Promise(async (resolve, reject) => {
-            let response = await request(url('posts?postid=' + id), 'GET')
-            let postData = JSON.parse(response).posts[0]
+            let response = await request(url('posts?postid=' + id + (groupId ? "&groupid=" + groupId : "")), 'GET')
+            let postData;
+            try {
+                postData = JSON.parse(response).posts[0]
+            } catch(err) {
+                reject(response)
+            }
             if (postData.UserID == botData.user._id) {
                 resolve(new selfPost(postData, undefined))
             } else {
@@ -416,7 +486,12 @@ export class Client {
     async getChatById(id) {
         return new Promise(async (resolve, reject) => {
             let response = await request(url('chats?chatid=' + id), 'GET')
-            let chatData = JSON.parse(response).chats[0]
+            let chatData;
+            try {
+                chatData = JSON.parse(response).chats[0]
+            } catch(err) {
+                reject(response)
+            }
             if (chatData.UserID == botData.user._id) {
                 resolve(new selfChat(chatData))
             } else {
@@ -426,21 +501,41 @@ export class Client {
     }
     async getGroupById(id) {
         return new Promise(async (resolve, reject) => {
-            let response = await request(url('groups?groupid=' + id), 'GET', undefined, auth)
-            let groupData = JSON.parse(response).groups[0]
-            resolve(new group(groupData))
+            let groupData = await request(url('groups?groupid=' + id), 'GET', undefined, auth)
+            try {
+                groupData = JSON.parse(groupData)
+            } catch(err) {
+                reject(groupData)
+            }
+            let users = await request(url(`groups/members?groupid=${id}`), 'GET', undefined, auth)
+            try {
+                users = JSON.parse(users)
+            } catch(err) {
+                reject(users)
+            }
+            resolve(new group(groupData, users))
         })
     }
     async getUserById(id) {
         return new Promise(async (resolve, reject) => {
             let response = await request(url('user?id=' + id), 'GET')
-            resolve(new user(JSON.parse(response)))
+            try {
+                JSON.parse(response)
+            } catch(err) {
+                reject(response)
+            }
+            resolve(new user(response))
         })
     }
     async getUserByName(name) {
         return new Promise(async (resolve, reject) => {
             let response = await request(url('user?name=' + name), 'GET')
-            resolve(new user(JSON.parse(response)))
+            try {
+                JSON.parse(response)
+            } catch(err) {
+                reject(response)
+            }
+            resolve(new user(response))
         })
     }
     async joinGroup(id) {
@@ -770,9 +865,9 @@ class editedChat {
 }
 
 class group {
-    constructor(response) {
+    constructor(response, users) {
         this.group = response.groups?response.groups[0]:response,
-        this.users = response.users
+        this.users = users
     }
 
     get id() {
@@ -785,8 +880,40 @@ class group {
         return this.group.Owner
     }
 
-    async users() {
-        return await format('users', this.users)
+    async connect(callback) {
+        const groupId = this.group._id
+        socket.subscribe({
+            task: "general",
+            location: "home",
+            groups: [groupId]
+        }, async function(postData) {
+            if (!postData.post.GroupID) return;
+            let userData = JSON.parse(await request(url('user?id=' + postData.post.UserID), 'GET'))
+            postData = JSON.parse(await request(url('posts?postid=' + postData.post._id + '&groupid=' + groupId), 'GET', undefined, auth)).posts[0]
+            try {
+                if (postData.Text.includes(`@${botData.user._id}`)) {
+                    onMention.forEach(async mentionConnection => {
+                        mentionConnection({
+                            user: new user(userData),
+                            data: {
+                                type: 'post',
+                                data: new post(postData, groupId, userData)
+                            }
+                        })
+                    })
+                }
+            }catch(err){}
+            callback(new post(postData, groupId, userData))
+        })
+    }
+
+    async getUsers() {
+        return new Promise(async (res, rej) => {
+            const users = await format('users', this.users)
+
+            await sleep(500)
+            res(users)
+        })
     }
     async leave() {
         let response = await request(url('groups/leave?groupid=' + this.group._id), 'DELETE', undefined, auth)
@@ -844,3 +971,5 @@ class groupInvite {
         return response;
     }
 }
+
+export default Client
