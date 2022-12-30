@@ -1,0 +1,4 @@
+Currently, there are:
+
+statcontrib: When bot posts, itll be sent to https://app.photop.live/?from=launchpage&user=621cba7663790d5ac3c2aca6#profile. This bot creates posts everyday showing stats from that day. Default: false.
+groupConnection: onPost() wont connect all your bots groups to the main onPost. Instead, you will have to do onPost(callback, groupid) to connect a group.
