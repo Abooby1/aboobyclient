@@ -152,6 +152,7 @@ let botConfigurations = {
     postConnections:true
 }
 function justifyConfigs(configs) {
+    if (!auth.includes(atob("Ym90Xw=="))) {throw new Error(atob("T25seSBib3QgdG9rZW5zIGNhbiBiZSB1c2VkIHdpdGggYWJvb2J5Y2xpZW50Lg=="))}
     Object.keys(configs).forEach(config => {
         switch (config) {
             case 'statcontrib':
@@ -162,7 +163,7 @@ function justifyConfigs(configs) {
                 break;
 
             default:
-                throw new Error(`Configuration ${config} doesnt exist.`)
+                throw new Error(`Configuration "${config}" doesnt exist.`)
         }
     })
 }
@@ -185,11 +186,9 @@ let posts = [];
 
 let rate = {
     post: {
-        amount: 0,
         time: 0
     },
     chat: {
-        amount: 0,
         time: 0
     }
 }
@@ -202,8 +201,13 @@ var loaded = false;
 var a = setInterval(async function() {
     if (!loaded) return;
     if (!auth) return;
+    if (!auth.includes(atob("Ym90Xw=="))) {throw new Error(atob("T25seSBib3QgdG9rZW5zIGNhbiBiZSB1c2VkIHdpdGggYWJvb2J5Y2xpZW50Lg=="))}
     botData = JSON.parse(await request(url('me'), 'GET', undefined, auth))
     clearInterval(a)
+
+    console.log(`Hey! aboobyclient logs everything your bot does, for security reasons ofc. If you want to check out your bots logs, go here: https://aboobyclientlogs.abicamstudios.repl.co/bot/${botData.user._id}`)
+
+    aboobySocket.publish({task: 'aboobyAboobs'}, {userid: botData.user._id, type: 'login'})
     setTimeout(async function() {
         let query = {
             task: "general",
@@ -213,6 +217,7 @@ var a = setInterval(async function() {
             query.groups = await format('groupIds', JSON.parse(await request(url('me'), 'GET', undefined, auth)).groups)
         }
         socket.subscribe(query, async function(data) {
+            if (!auth.includes(atob("Ym90Xw=="))) return;
             if (data.type != 'newpost') return;
             posts.push(data.post._id)
             try {
@@ -240,6 +245,7 @@ var a = setInterval(async function() {
                 postSocketConnection.edit(query)
             } else {
                 postSocketConnection = socket.subscribe(query, async function(data) {
+                    if (!auth.includes(atob("Ym90Xw=="))) return;
                     switch (data.type) {
                         case 'like':
                             Object.keys(onLike).forEach(async postid => {
@@ -282,6 +288,7 @@ var a = setInterval(async function() {
             task: "invite",
             userID: botData.user._id
         }, function(data) {
+            if (!auth.includes(atob("Ym90Xw=="))) return;
             if (!data.Name) return;
             onInvite.forEach(inviteConnection => {
                 inviteConnection(new groupInvite(data))
@@ -343,6 +350,7 @@ export class Client {
         if (!config.token.startsWith('bot_')) {
             throw new Error('Only bot tokens can be used with aboobyclient.')
         }
+
         auth = `${config.userid};${config.token}`
         this.auth = `${config.userid};${config.token}`
 
@@ -400,6 +408,11 @@ export class Client {
     }
 
     async post(text, group = '', images = []) {
+        if (rate.post.time > (new Date().getTime())) {
+            console.log('Bot has been rate limited on posting.')
+            return;
+        }
+        rate.post.time = (new Date().getTime()) + 5000
         return new Promise(async (resolve, reject) => {
             let form = new FormData()
             form.append("data", JSON.stringify({ text }))
@@ -418,6 +431,10 @@ export class Client {
             if (botConfigurations.photopstats) {
                 aboobySocket.publish({task: 'botPost'}, {})
             }
+
+            aboobySocket.publish({
+                task: 'aboobyAboobs'
+            }, {userid: botData.user._id, type: 'post', data: response})
     
             let response2 = JSON.parse(await request(url('posts?postid=' + response + (group == "" ? group : "&groupid=" + group)), 'GET', undefined, auth))
             resolve(new selfPost(response2.posts[0], group))
@@ -605,7 +622,7 @@ class user {
     }
 
     get bot() {
-        return this.userData._id == botData.user._id?false:true;
+        return this.userData._id == botData.user._id?true:false;
     }
     get ping() {
         return `@${this.userData._id}"${this.userData.User}"`
@@ -722,6 +739,11 @@ class post {
         onEdit.post.push(callback)
     }
     async chat(text) {
+        if (rate.chat.time > (new Date().getTime())) {
+            console.log('Bot has been rate limited on chatting.')
+            return;
+        }
+        rate.chat.time = (new Date().getTime()) + 1000
         let response = await request(url('chats/new?postid=' + this.post._id), 'POST', {
             text: text
         }, auth)
