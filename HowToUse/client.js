@@ -62,4 +62,8 @@ client.updateVisibility("new visibility | 'public', 'private', 'following'")//ch
 client.updateProfilePic("./aboobyclient.png")//changes the bots profile picture, file is needed
 client.updateBanner("./aboobyclient.png")//changes the bots banner, file is needed
 
-client.createDatabase()//create a database straight from aboobyclient (has some default values) | check db.js for more information
+await client.createDatabase()//create a database straight from aboobyclient (has some default values) | check db.js for more information
+client.reconnect(post => {
+  //connects to posts you connected if database is connected with "client.createDatabase()" | Auto connects to chats and gives post information, see post.js for post properties
+  post.chat("Im now reconnected to this post!")
+})
