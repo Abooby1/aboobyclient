@@ -15,8 +15,13 @@ client.getUserById("6154f0d0a8d6d106c5b869b6").then(user => {
   await user.status().raw//raw number status
   await user.status().parsed//returns: status of user, "online", "offline", "group"
 
-  user.follows.following//number of people user is following
-  user.follows.followers//number of people following the user
+  user.rawFollows.following//number of people user is following
+  user.rawFollows.followers//number of people following the user
+  
+  user.parsedFollows().then(follows => {
+    follows.following//array of userdata of the people the user is following
+    follows.followers//array of userdata of the people following the user
+  })
 
   user.follow()//follows the given user
   user.unfollow()//unfollows the given user
