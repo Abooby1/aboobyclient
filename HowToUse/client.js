@@ -61,3 +61,5 @@ client.updateUsername("new username")//changes the bots username
 client.updateVisibility("new visibility | 'public', 'private', 'following'")//changes the bots profile visibility
 client.updateProfilePic("./aboobyclient.png")//changes the bots profile picture, file is needed
 client.updateBanner("./aboobyclient.png")//changes the bots banner, file is needed
+
+client.createDatabase()//create a database straight from aboobyclient (has some default values) | check db.js for more information
