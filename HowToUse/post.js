@@ -13,7 +13,11 @@ client.getPostById("638253dad62f9d79c6459c86").then(post => {
 
   post.report("reason", "report")//reports the post
 
-  post.chat("text")//chats in a post without reply=
+  post.chat("text")//chats in a post without reply
+  
+  post.on(type, function() {
+    //main listener for post | check on.js for properties
+  })
 
   post.onChat(callback => {
     //check onChat.js for information
