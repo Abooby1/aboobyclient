@@ -22,6 +22,10 @@ client.getUserById("6154f0d0a8d6d106c5b869b6").then(user => {
     follows.following//array of userdata of the people the user is following
     follows.followers//array of userdata of the people following the user
   })
+  
+  user.on(type, function() {
+    //main listener for user | check on.js for properties
+  })
 
   user.follow()//follows the given user
   user.unfollow()//unfollows the given user
