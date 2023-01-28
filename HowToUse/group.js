@@ -5,6 +5,10 @@ client.getGroupById("6335c42a3402fdba72620e37").then(group => {
   group.getUsers(users => {
     //returns array of users in group
   })
+  
+  group.on(type, function() {
+    //main listener for group | check on.js for properties
+  })
 
   group.leave()//leave the given group
   group.invite("userid")//invite someone to the group
