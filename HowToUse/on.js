@@ -1,5 +1,5 @@
 //client
-"post" // listener for posts at home page | onPost.js
+"post" // listener for posts at home page | the "client.on" callback will need two params: one for the post data and one for the groupid; "client.on("post", function(post, groupid){})" | onPost.js
 "invite" // listener for group invites | onInvite.js
 "mention" // listener for mentions in posts | onMention.js
 "ready" // listener for when the client initializes
