@@ -1,3 +1,7 @@
+client.on(type, function() {
+  //main listener function | check on.js for properties
+})
+
 client.onPost(post => {
   //listen for posts | go to onPost.js for properties
 })
