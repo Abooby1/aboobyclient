@@ -6,6 +6,10 @@ client.getChatById("6383dfd8f06958b583a92436").then(chat => {
   chat.reply("text")//replies to the chat
   chat.report("reason", "report")//reports the chat
   
+  chat.on(type, function() {
+    //main listener for chat events | check on.js for properties
+  })
+  
   chat.onEdit(callback => {
     //check onEdit.js for more information
   })
