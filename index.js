@@ -3,6 +3,7 @@ import FormData from "form-data"
 import SimpleSocket from "simple-socket-js"
 import fs from 'fs'
 import sleep from "es7-sleep";
+import JSONdb from "simple-json-db";
 const socket = new SimpleSocket({
     project_id: "61b9724ea70f1912d5e0eb11",
     project_token: "client_a05cd40e9f0d2b814249f06fbf97fe0f1d5"
@@ -30,6 +31,9 @@ async function request(url, method, body, auth, contentType = "application/json"
                 headers,
                 body: body
             }).then(response => {
+                if (response.status == 418) {
+                    throw new Error('Token banned.')
+                }
                 if(useJson) {
                     response.json().then(data => {
                         resolve(data)
@@ -45,6 +49,9 @@ async function request(url, method, body, auth, contentType = "application/json"
                 method: method,
                 headers,
             }).then(response => {
+                if (response.status == 418) {
+                    throw new Error('Token banned.')
+                }
                 if(useJson) {
                     response.json().then(data => {
                         resolve(data)
@@ -178,6 +185,7 @@ let onMention = [];
 let onReady = [];
 let onDelete = [];
 let onLike = {};
+let onCache = [];
 
 let postcache = [];
 
@@ -197,6 +205,7 @@ let postSocketConnection;
 
 let botData;
 var loaded = false;
+var dbConnection = false;
 
 var a = setInterval(async function() {
     if (!loaded) return;
@@ -281,7 +290,16 @@ var a = setInterval(async function() {
                 userData = JSON.parse(await request(url('user?id=' + data.post.UserID), 'GET'))
             }catch(err) {}
             onPost.forEach(postConnection => {
-                postConnection(new post(postData, data.GroupID, userData))
+                if (typeof postConnection == 'function') {
+                    postConnection(new post(postData, data.GroupID, userData))
+                } else {
+                    let [callback, type] = postConnection;
+                    switch(type) {
+                        case 'on':
+                            callback(new post(postData, data.GroupID, userData), data.GroupID)
+                            break;
+                    }
+                }
             })
         })
         socket.subscribe({
@@ -365,7 +383,60 @@ export class Client {
         return postcache;
     }
 
-    onPost(callback, groupId) {
+    async on(type, callback) {
+        await botData;
+        switch(type) {
+            default:
+                throw new Error(`"${type}" is not a valid listener.`)
+
+            case 'post':
+                onPost.push([callback, 'on'])
+                break;
+            case 'invite':
+                onInvite.push(callback)
+                break;
+            case 'mention':
+                onMention.push(callback)
+                break;
+            case 'ready':
+                onReady.push(callback)
+                break;
+            case 'delete':
+                onDelete.push(callback)
+                break;
+            case 'cache':
+                onCache.push(callback)
+                break;
+
+            case 'newFollower':
+                socket.subscribe({
+                    task: 'profile',
+                    _id: botData.user._id
+                }, async function(data) {
+                    if (data.userID == botData.user._id) return;
+                    if (data.type != 'follow' || data.change < 0) return;
+                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
+                    response = JSON.parse(response)
+                    callback(new user(response))
+                })
+                break;
+            case 'unfollow':
+                socket.subscribe({
+                    task: 'profile',
+                    _id: botData.user._id
+                }, async function(data) {
+                    if (data.userID == botData.user._id) return;
+                    if (data.type != 'follow' || data.change > 0) return;
+                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
+                    response = JSON.parse(response)
+                    callback(new user(response))
+                })
+                break;
+        }
+    }
+
+    async onPost(callback, groupId) {
+        await botData;
         if (groupId) {
             socket.subscribe({
                 task: "general",
@@ -394,17 +465,27 @@ export class Client {
         }
         onPost.push(callback)
     }
-    onInvite(callback) {
+    async onInvite(callback) {
+        await botData;
         onInvite.push(callback)
     }
-    onMention(callback) {
+    async onMention(callback) {
+        await botData;
         onMention.push(callback)
     }
-    onReady(callback) {
+    async onReady(callback) {
+        await botData;
         onReady.push(callback)
     }
-    onDelete(callback) {
+    async onDelete(callback) {
+        await botData;
         onDelete.push(callback)
+    }
+
+    async createDatabase() {
+        if (dbConnection) return;
+        await botData;
+        return new db()
     }
 
     async post(text, group = '', images = []) {
@@ -614,6 +695,22 @@ export class Client {
         })
         return response.text();
     }
+
+    async reconnect(callback) {
+        if (!dbConnection) return 'No db connected.';
+        const connections = await dbConnection.get('connectedposts')
+        const response = await request(url('chats/connect'), 'POST', {ssid: socket.secureID, connect: connections, posts: connections})
+        connections.forEach(async connection => {
+            const postData = JSON.parse(await request(url('posts?postid=' + connection), 'GET', undefined, auth)).posts[0]
+            if (!postData) return;
+            const userData = JSON.parse(await request(url('user?id=' + postData.UserID), 'GET', undefined, auth))
+            if (!userData) return;
+            chatConnects.push(connection)
+            setTimeout(function() {
+                callback(new post(postData, undefined, userData))
+            }, 1500 * connections.indexOf(connection))
+        })
+    }
 }
 
 class user {
@@ -644,11 +741,56 @@ class user {
             visibility: this.userData.ProfileData.visibility
         }
     }
-    get follows() {
+    get rawFollows() {
         return {
             following: this.userData.ProfileData.following,
             followers: this.userData.ProfileData.followers
         }
+    }
+
+    async on(type, callback) {
+        await botData;
+        if (!this.authorData) return;
+        switch (type) {
+            default:
+                throw new Error(`"${type}" is not a user listener.`)
+
+            case 'newFollower':
+                socket.subscribe({
+                    task: 'profile',
+                    _id: this.authorData._id
+                }, async function(data) {
+                    if (data.userID == this.authorData._id) return;
+                    if (data.type != 'follow' || data.change < 0) return;
+                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
+                    response = JSON.parse(response)
+                    callback(new user(response))
+                })
+                break;
+            case 'unfollow':
+                socket.subscribe({
+                    task: 'profile',
+                    _id: this.authorData._id
+                }, async function(data) {
+                    if (data.userID == this.authorData._id) return;
+                    if (data.type != 'follow' || data.change > 0) return;
+                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
+                    response = JSON.parse(response)
+                    callback(new user(response))
+                })
+                break;
+        }
+    }
+
+    async parsedFollows() {
+        return new Promise(async (res, rej) => {
+            let response = JSON.parse(await request(url('user/followers'), 'GET', undefined, auth))
+            let response2 = JSON.parse(await request(url('user/following'), 'GET', undefined, auth))
+            res({
+                followers: response,
+                following: response2
+            })
+        })
     }
 
     async follow() {
@@ -694,6 +836,36 @@ class post {
         this.group = group
     }
 
+    async on(type, callback) {
+        switch(type) {
+            default:
+                throw new Error(`"${type}" is not a post listener.`)
+            
+            case 'chat':
+                if (dbConnection) {
+                    const connections = await dbConnection.get('connectedposts')
+                    if (!connections) return;
+                    if (connections.length >= 15) {
+                        connections.splice(15, 1)
+                    }
+                    connections.unshift(this.post._id)
+                    dbConnection.set('connectedposts', connections)
+                }
+                let groupId = (this.group?'?groupid=' + this.group:'')
+                chatConnects.push([this.post._id, callback])
+                currentConnections.push(this.post._id)
+                const response = await request(url('chats/connect' + groupId), 'POST', {ssid: socket.secureID, connect: currentConnections, posts: currentConnections})
+                return response;
+
+            case 'like':
+                onLike[this.id] = callback;
+                break;
+            case 'edit':
+                onEdit.post.push(callback)
+                break;
+        }
+    }
+
     get id() {
         return this.post._id
     }
@@ -715,7 +887,10 @@ class post {
     }
     
     cache() {
-        postcache.push(new post(this.post, this.authorData, this.group))
+        postcache.push(new post(this.post, this.group, this.authorData))
+        onCache.forEach(cache => {
+            cache(new post(this.post, this.group, this.authorData))
+        })
     }
 
     async report(reason, report) {
@@ -726,6 +901,15 @@ class post {
         return response;
     }
     async onChat(callback) {
+        if (dbConnection) {
+            const connections = await dbConnection.get('connectedposts')
+            if (!connections) return;
+            if (connections.length >= 15) {
+                connections.splice(15, 1)
+            }
+            connections.unshift(this.post._id)
+            dbConnection.set('connectedposts', connections)
+        }
         let groupId = (this.group?'?groupid=' + this.group:'')
         chatConnects.push([this.post._id, callback])
         currentConnections.push(this.post._id)
@@ -827,6 +1011,18 @@ class chat {
         return this.chat.Text
     }
 
+    async on(type, callback) {
+        await botData;
+        switch (type) {
+            default:
+                throw new Error(`"${type}" is not a chat listener.`)
+
+            case 'edit':
+                onEdit.chat.push(callback)
+                break;
+        }
+    }
+
     async reply(text) {
         let response = await request(url('chats/new?postid=' + this.chat.PostID), 'POST', {
             text: text,
@@ -900,6 +1096,26 @@ class group {
     }
     get owner() {
         return this.group.Owner
+    }
+
+    async on(type, callback) {
+        await botData;
+        switch(type) {
+            default:
+                throw new Error(`"${type}" is not a group listener.`)
+
+            case 'newMember':
+                socket.subscribe({
+                    task: 'group',
+                    groupID: this.group._id
+                }, async function(data) {
+                    if (data.type != 'member') return;
+                    var response = await request(url('user?id=' + data.member._id), 'GET', undefined, auth)
+                    response = JSON.parse(response[1])
+                    callback(new user(response))
+                })
+                break;
+        }
     }
 
     async connect(callback) {
@@ -991,6 +1207,41 @@ class groupInvite {
         let invite = (await this.invites())[0]
         let response = await request(url('groups/revoke?inviteid=' + invite._id), 'DELETE', {}, auth)
         return response;
+    }
+}
+
+async function initDB() {
+    if (!await dbConnection.get('connectedposts')) {
+        dbConnection.set('connectedposts', [])
+    }
+}
+export class db {
+    constructor() {
+        this.database = new JSONdb('aboobyclientstorage.json')
+        dbConnection = this.database
+        initDB()
+    }
+
+    async get(filter) {
+        return JSON.parse(await this.database.get(filter))
+    }
+    async create(filter, data) {
+        return new Promise(async (res, rej) => {
+            if (this.database.get(filter)) {
+                rej()
+            }
+            const creation = await this.database.set(filter, data)
+            res()
+        })
+    }
+    async save(filter, data) {
+        return new Promise(async (res, rej) => {
+            if (!this.database.get(filter)) {
+                rej()
+            }
+            const save = await this.database.set(filter, data)
+            res()
+        })
     }
 }
 
