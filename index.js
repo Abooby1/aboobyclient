@@ -1,4 +1,5 @@
 import fetch from "node-fetch"
+import axios from 'axios'
 import FormData from "form-data"
 import SimpleSocket from "simple-socket-js"
 import fs from 'fs'
@@ -8,1241 +9,1238 @@ const socket = new SimpleSocket({
     project_id: "61b9724ea70f1912d5e0eb11",
     project_token: "client_a05cd40e9f0d2b814249f06fbf97fe0f1d5"
 });
-const aboobySocket = new SimpleSocket({
-    project_id: "6349eefe3101ef7cafd5d273",
-    project_token: "client_cd547ca434101f5dd33b8944f441e0aba66"
+
+async function sendRequest(url, method, body, auth, contentType = "application/json", stringify = true, useJson = false) {
+  return new Promise(async (resolve, reject) => {
+    let data = {
+      method: method,
+      headers: {
+        "cache": "no-cache",
+        "Content-Type": contentType,
+        "auth": auth || client.auth
+      }
+    }
+
+    if(body) {
+      if (typeof body == "object" && body instanceof FormData == false) {
+        body = JSON.stringify(body);
+      }
+      data.body = body;
+    }
+
+    let response = await fetch(url, data)
+    resolve([response.status, await response.text()])
+  })
+}
+
+var client;
+const serverURL = 'https://photop.exotek.co/';
+const assetURL = 'https://photop-content.s3.amazonaws.com/';
+
+var postCache = new Array();
+
+//listeners
+var clientListeners = new Object()
+var userListeners = new Object()
+var postListeners = new Object()
+var chatListeners = new Object()
+var groupListeners = new Object()
+var messageListeners = new Object()
+//
+
+/*
+TODO
+* Finish listeners
+* Message class
+*/
+
+//utils
+async function formatBotData() {
+  let [code, response] = await sendRequest(serverURL + 'me', 'GET')
+
+  if(code == 200) {
+    response = JSON.parse(response)
+    client.userData = response.user;
+
+    if(clientListeners['ready']) {
+      clientListeners['ready'].forEach(listener => {
+        listener()
+      })
+    }
+
+    socket.subscribe({
+      task: "invite",
+      userID: response.user._id
+    }, function(data) {
+      if (!data.Name) return;
+      if(!clientListeners['invite']) return;
+      clientListeners['invite'].forEach(listener => {
+        listener(new groupUserInvite(data))
+      })
+    })
+    socket.subscribe({
+			task: 'profile',
+			_id: response.user._id
+    }, async function(data) {
+      switch(data.type) {
+        case 'follow':
+          if(clientListeners['followed'] && data.change == 1) {
+            clientListeners['followed'].forEach(async (listener) => {
+              let [code, userData] = await sendRequest(serverURL + 'user?id=' + data.userID, 'GET')
+              if(code == 200) {
+                listener(new user(JSON.parse(userData)))
+              }
+            })
+          }
+          if(clientListeners['unfollowed'] && data.change == -1) {
+            clientListeners['unfollowed'].forEach(async (listener) => {
+              let [code, userData] = await sendRequest(serverURL + 'user?id=' + data.userID, 'GET')
+              if(code == 200) {
+                listener(new user(JSON.parse(userData)))
+              }
+            })
+          }
+          break;
+      }
+    })
+  }
+}
+//
+
+//sockets
+socket.remotes.stream = function(data) {
+  let chatData = data.chat;
+
+  switch (data.type) {
+    case 'chat':
+      if(postListeners['chat']) {
+        postListeners['chat'].forEach(async (listener) => {
+          let [postid, callback] = listener;
+
+          if(postid == chatData.PostID) {
+            let [code, userData] = await sendRequest(serverURL + 'user?id=' + chatData.UserID, 'GET')
+            if(code == 200) {
+              userData = JSON.parse(userData)
+            } else {
+              userData = null;
+            }
+
+            let [code2, responseData] = await sendRequest(serverURL + 'chats?chatid=' + chatData._id, 'GET')
+
+            if(code2 == 200) {
+              responseData = JSON.parse(responseData).chats[0];
+
+              callback(new chat({
+                chat: responseData,
+                user: userData
+              }))
+            }
+          }
+        })
+      }
+      break;
+    case 'chatdelete':
+      if(chatListeners['delete']) {
+        chatListeners['delete'].forEach(async (listener) => {
+          let [chatid, callback] = listener;
+
+          if(chatid == data.chatID) {
+            callback(data.chatID)
+          }
+        })
+      }
+      break;
+    case 'chatedit':
+      if(chatListeners['edit']) {
+        chatListeners['edit'].forEach(async (listener) => {
+          let [chatid, callback] = listener;
+
+          if(chatid == data.chatID) {
+            let [code2, responseData] = await sendRequest(serverURL + 'chats?chatid=' + data.chatID, 'GET')
+            if(code2 == 200) {
+              responseData = JSON.parse(responseData).chats[0];
+            }
+
+            let [code, userData] = await sendRequest(serverURL + 'user?id=' + responseData.UserID, 'GET')
+            if(code == 200) {
+              userData = JSON.parse(userData)
+            } else {
+              userData = null;
+            }
+
+            if(code2 == 200) {
+              callback(new chat({
+                chat: responseData,
+                user: userData
+              }))
+            }
+          }
+        })
+      }
+      break;
+  }
+}
+socket.subscribe({
+  task: 'general',
+  location: 'home'
+}, async function(data) {
+  let postData = data.post;
+  switch(data.type) {
+    case 'newpost':
+      if(!clientListeners['post']) return;
+
+      let [code, userData] = await sendRequest(serverURL + 'user?id=' + postData.UserID, 'GET')
+      if(code == 200) {
+        userData = JSON.parse(userData)
+      } else {
+        userData = null;
+      }
+
+      let [code2, postResponse] = await sendRequest(serverURL + 'posts?postid=' + postData._id, 'GET')
+      if(code2 == 200) {
+        postResponse = JSON.parse(postResponse).posts[0];
+        clientListeners['post'].forEach(postListener => {
+          postListener(new post({
+            post: postResponse,
+            user: userData
+          }))
+        })
+      }
+      break;
+  }
 })
 
-//modified by IMPixel
-async function request(url, method, body, auth, contentType = "application/json", stringify = true, useJson = false) {
-    return new Promise((resolve, reject) => {
-        let headers = {
-            'Content-Type': contentType
-        }
-        if(auth) {
-            headers["auth"] = auth
-        }
-        if(stringify) {
-            body = JSON.stringify(body)
-        }
-        if(body) {
-            fetch(url, {
-                method: method,
-                headers,
-                body: body
-            }).then(response => {
-                if (response.status == 418) {
-                    throw new Error('Token banned.')
-                }
-                if(useJson) {
-                    response.json().then(data => {
-                        resolve(data)
-                    })
+var postSocket;
+function refreshPostSocket() {
+  if(!postListeners['mainSocket']) return;
+  let posts = [];
+  postListeners['mainSocket'].forEach(listener => {
+    if(posts.includes(listener[0])) return;
+    posts.push(listener[0])
+  })
+
+  let query = {
+    task: 'post',
+    _id: posts
+  }
+  if(postSocket) {
+    postSocket.edit(query)
+    return;
+  }
+
+  postSocket = socket.subscribe(query, async function(data) {
+    switch(data.type) {
+      case 'delete':
+        postListeners['mainSocket'].forEach(listener => {
+          let [postid, callback, type] = listener;
+          if(type == 'delete' && postid == data._id) {
+            callback(data._id)
+          }
+        })
+        break;
+      case 'edit':
+        postListeners['mainSocket'].forEach(async (listener) => {
+          let [postid, callback, type] = listener;
+          if(type == 'edit' && postid == data._id) {
+            let [code, postData] = await sendRequest(serverURL + 'posts?postid=' + postid, 'GET')
+            if(code == 200) {
+              postData = JSON.parse(postData).posts[0];
+              let [code2, userData] = await sendRequest(serverURL + 'user?id=' + postData.UserID, 'GET')
+              if(code2 == 200) {
+                userData = JSON.parse(userData)
+              } else {
+                userData = null;
+              }
+
+              callback(new post({
+                post: postData,
+                user: userData
+              }))
+            }
+          }
+        })
+        break;
+      case 'like':
+        if(data.change == 1) {
+          postListeners['mainSocket'].forEach(async (listener) => {
+            let [postid, callback, type] = listener;
+            if(type == 'like' && postid == data._id) {
+              let [code, postData] = await sendRequest(serverURL + 'posts?postid=' + postid, 'GET')
+              if(code == 200) {
+                postData = JSON.parse(postData).posts[0];
+                let [code2, userData] = await sendRequest(serverURL + 'user?id=' + postData.UserID, 'GET')
+                if(code2 == 200) {
+                  userData = JSON.parse(userData)
                 } else {
-                    response.text().then(data => {
-                        resolve(data)
-                    })
+                  userData = null;
                 }
-            })
+
+                callback(new post({
+                  post: postData,
+                  user: userData
+                }))
+              }
+            }
+          })
         } else {
-            fetch(url, {
-                method: method,
-                headers,
-            }).then(response => {
-                if (response.status == 418) {
-                    throw new Error('Token banned.')
-                }
-                if(useJson) {
-                    response.json().then(data => {
-                        resolve(data)
-                    })
+          postListeners['mainSocket'].forEach(async (listener) => {
+            let [postid, callback, type] = listener;
+            if(type == 'dislike' && postid == data._id) {
+              let [code, postData] = await sendRequest(serverURL + 'posts?postid=' + postid, 'GET')
+              if(code == 200) {
+                postData = JSON.parse(postData).posts[0];
+                let [code2, userData] = await sendRequest(serverURL + 'user?id=' + postData.UserID, 'GET')
+                if(code2 == 200) {
+                  userData = JSON.parse(userData)
                 } else {
-                    response.text().then(data => {
-                        resolve(data)
-                    })
+                  userData = null;
                 }
-            })
+
+                callback(new post({
+                  post: postData,
+                  user: userData
+                }))
+              }
+            }
+          })
         }
-    })
-}
-
-function url(url) {
-    return "https://photop.exotek.co/" + url
-}
-async function format(type, data) {
-    if (!auth.includes(atob("Ym90Xw=="))) {throw new Error(atob("T25seSBib3QgdG9rZW5zIGNhbiBiZSB1c2VkIHdpdGggYWJvb2J5Y2xpZW50Lg=="))}
-    switch (type) {
-        case 'status':
-            switch (data) {
-                case 0:
-                    return 'offline'
-                case 1:
-                    return 'online'
-                case 2:
-                    return 'group'
-            }
-            break;
-        case 'groups':
-            if (!data) return [];
-            return new Promise(async (res, rej) => {
-                const findGroup = function(groupid) {
-                    return new Promise(async (res, rej) => {
-                        let group2 = JSON.parse(await request(url('groups?groupid=' + groupid), 'GET', undefined, auth))
-                        let users = JSON.parse(await request(url(`groups/members?groupid=${groupid}`), 'GET', undefined, auth))
-                        if (group2.groups) {
-                            group2 = group2.groups[0]
-                        }
-                        let parsedGroup = group2
-                        res([parsedGroup, users])
-                    })
-                }
-
-                const parseGroupData = async function(data) {
-                    return new Promise((res, rej) => {
-                        let [groupData, users] = data
-                        res(new group(groupData, users))
-                    })
-                }
-
-                let parsedGroups = [];
-                Object.keys(data).forEach(id => {
-                    findGroup(id).then(async groupData => {
-                        parsedGroups.push(await parseGroupData(groupData))
-                    })
-                })
-
-                await sleep(1000)
-                res(parsedGroups)
-            })
-        case 'users':
-            if (!data) return [];
-            return new Promise(async (res, rej) => {
-                let formattedUsers = []
-
-                const getUser = async function(userid) {
-                    return await request(url(`user?id=${userid}`), "GET")
-                }
-
-                data.forEach(async userdata => {
-                    var userData = await getUser(userdata._id)
-
-                    try {
-                        formattedUsers.push(new user(JSON.parse(userData)))
-                    } catch(err) {
-                        formattedUsers.push(userData)
-                    }
-                })
-
-                await sleep(1500)
-                res(formattedUsers)
-            })
-        case 'groupIds':
-            if (!data) return [];
-            let groupData2 = [];
-            let groups = Object.keys(data)
-            for(var i=0;i<groups.length;i++) {
-                groupData2.push(groups[i])
-            }
-            return groupData2;
-        case 'posts':
-            if (!data) return [];
-            let postData = []
-            data.forEach(post => {
-                postData.push(new selfPost(post))
-            })
-            return postData;
+        break;
     }
+  })
 }
+//
 
-let botConfigurations = {
-    photopstats:false,
-    postConnections:true
-}
-function justifyConfigs(configs) {
-    if (!auth.includes(atob("Ym90Xw=="))) {throw new Error(atob("T25seSBib3QgdG9rZW5zIGNhbiBiZSB1c2VkIHdpdGggYWJvb2J5Y2xpZW50Lg=="))}
-    Object.keys(configs).forEach(config => {
-        switch (config) {
-            case 'statcontrib':
-                botConfigurations.photopstats = configs[config];
-                break;
-            case 'groupConnection':
-                botConfigurations.postConnections = configs[config];
-                break;
-
-            default:
-                throw new Error(`Configuration "${config}" doesnt exist.`)
-        }
-    })
-}
-
-let onEdit = {
-    chat: [],
-    post: []
-}
-let onPost = [];
-let onInvite = [];
-let onMention = [];
-let onReady = [];
-let onDelete = [];
-let onLike = {};
-let onCache = [];
-
-let postcache = [];
-
-let chatConnects = [];
-let posts = [];
-
-let rate = {
-    post: {
-        time: 0
-    },
-    chat: {
-        time: 0
-    }
-}
-
-let postSocketConnection;
-
-let botData;
-var loaded = false;
-var dbConnection = false;
-
-var a = setInterval(async function() {
-    if (!loaded) return;
-    if (!auth) return;
-    if (!auth.includes(atob("Ym90Xw=="))) {throw new Error(atob("T25seSBib3QgdG9rZW5zIGNhbiBiZSB1c2VkIHdpdGggYWJvb2J5Y2xpZW50Lg=="))}
-    botData = JSON.parse(await request(url('me'), 'GET', undefined, auth))
-    clearInterval(a)
-
-    console.log(`Hey! aboobyclient logs everything your bot does, for security reasons ofc. If you want to check out your bots logs, go here: https://aboobyclientlogs.abicamstudios.repl.co/bot/${botData.user._id}`)
-
-    aboobySocket.publish({task: 'aboobyAboobs'}, {userid: botData.user._id, type: 'login'})
-    setTimeout(async function() {
-        let query = {
-            task: "general",
-            location: "home"
-        }
-        if (botConfigurations.postConnections) {
-            query.groups = await format('groupIds', JSON.parse(await request(url('me'), 'GET', undefined, auth)).groups)
-        }
-        socket.subscribe(query, async function(data) {
-            if (!auth.includes(atob("Ym90Xw=="))) return;
-            if (data.type != 'newpost') return;
-            posts.push(data.post._id)
-            try {
-                let postData = JSON.parse(await request(url('posts?postid=' + data.post._id + (data.post.GroupID?`&groupid=${data.post.GroupID}`:'')), 'GET', undefined, auth)).posts[0]
-                let postText = postData.Text
-                if (postText.includes(`@${botData.user._id}`)) {
-                    let mentionUserData = JSON.parse(await request(url('user?id=' + data.post.UserID), 'GET'))
-                    onMention.forEach(async mentionConnection => {
-                        mentionConnection({
-                            user: new user(mentionUserData),
-                            data: {
-                                type: 'post',
-                                data: new post(postData)
-                            }
-                        })
-                    })
-                }
-            }catch(err){}
-
-            let query = {
-                task: 'post',
-                _id: posts
-            }
-            if (postSocketConnection) {
-                postSocketConnection.edit(query)
-            } else {
-                postSocketConnection = socket.subscribe(query, async function(data) {
-                    if (!auth.includes(atob("Ym90Xw=="))) return;
-                    switch (data.type) {
-                        case 'like':
-                            Object.keys(onLike).forEach(async postid => {
-                                if (data.post._id != postid) return;
-                                let userData = JSON.parse(await request('user?id=' + data.userID), 'GET')
-                                onLike[postid]({
-                                    change: data.change,
-                                    user: new user(userData)
-                                })
-                            })
-                            break;
-                        case 'delete':
-                            onDelete.forEach(deleteConnection => {
-                                deleteConnection({
-                                    type: 'post',
-                                    data: new deletedPost(data)
-                                })
-                            })
-                            break;
-                        case 'edit':
-                            onEdit.post.forEach(postedit => {
-                                postedit(new editedPost(data))
-                            })
-                            break;
-                    }
-                })
-            }
-
-            let groupId = data.post.GroupID?`&groupid=${data.post.GroupID}`:''
-            let postData = JSON.parse(await request(url('posts?postid=' + data.post._id + groupId), 'GET', undefined, auth)).posts[0]
-            let userData;
-            try {
-                userData = JSON.parse(await request(url('user?id=' + data.post.UserID), 'GET'))
-            }catch(err) {}
-            onPost.forEach(postConnection => {
-                if (typeof postConnection == 'function') {
-                    postConnection(new post(postData, data.GroupID, userData))
-                } else {
-                    let [callback, type] = postConnection;
-                    switch(type) {
-                        case 'on':
-                            callback(new post(postData, data.GroupID, userData), data.GroupID)
-                            break;
-                    }
-                }
-            })
-        })
-        socket.subscribe({
-            task: "invite",
-            userID: botData.user._id
-        }, function(data) {
-            if (!auth.includes(atob("Ym90Xw=="))) return;
-            if (!data.Name) return;
-            onInvite.forEach(inviteConnection => {
-                inviteConnection(new groupInvite(data))
-            })
-        })
-
-        onReady.forEach(readyConnection => {
-            readyConnection('Ready!')
-        })
-    }, 500)
-}, 2000)
-socket.remotes.stream = async function(data) {
-    switch (data.type) {
-        case 'chat':
-            let chatData = JSON.parse(await request(url('chats?chatid=' + data.chat._id), 'GET')).chats[0]
-            let userData;
-            try {
-                userData = JSON.parse(await request(url('user?id=' + data.chat.UserID), 'GET'))
-            }catch(err) {}
-            if (chatData.Text.includes(`@${botData.user._id}`)) {
-                onMention.forEach(async mentionConnection => {
-                    mentionConnection({
-                        user: new user(userData),
-                        data: {
-                            type: 'chat',
-                            data: new chat(chatData, userData)
-                        }
-                    })
-                })
-            }
-            chatConnects.forEach(chatConnection => {
-                let [postId, callback] = chatConnection;
-                if (data.chat.PostID == postId) {
-                    callback(new chat(chatData, userData))
-                }
-            })
-            break;
-        case 'chatdelete':
-            onDelete.forEach(deleteConnection => {
-                deleteConnection({
-                    type: 'chat',
-                    data: new deletedChat(data)
-                })
-            })
-            break;
-        case 'chatedit':
-            onEdit.chat.forEach(chatedit => {
-                chatedit(new editedChat(data))
-            })
-            break;
-    }
-}
-let auth;
 export class Client {
-    constructor(config) {
-        if (botData)  {
-            throw new Error('Bot has already been connected in this project.')
-        }
-        if (!config.token.startsWith('bot_')) {
-            throw new Error('Only bot tokens can be used with aboobyclient.')
+  constructor({token, userid}) {
+    this.auth = `${userid};${token}`;
+    this.userid = userid;
+
+    client = this;
+    formatBotData()
+  }
+
+  get postCache() {
+    return postCache;
+  }
+
+  async on(type, data) {
+    if(!data.callback && typeof data != 'function') return;
+    var formatted = typeof data == 'function'?data:data.callback;
+
+    if(data.groupid) {
+      socket.subscribe({
+        task: "general",
+        location: "home",
+        groups: [data.groupid]
+      }, async function(data) {
+        if (!data.post.GroupID) return;
+        let postData = data.post;
+        
+        let [code, userData] = await sendRequest(serverURL + 'user?id=' + postData.UserID, 'GET')
+        if(code == 200) {
+          userData = JSON.parse(userData)
+        } else {
+          userData = null;
         }
 
-        auth = `${config.userid};${config.token}`
-        this.auth = `${config.userid};${config.token}`
+        let [code2, postResponse] = await sendRequest(serverURL + 'posts?postid=' + postData._id, 'GET')
+        if(code2 == 200) {
+          postData = JSON.parse(postResponse).posts[0];
+          formatted(new post({
+            post: postData,
+            user: userData,
+            group: data.groupid
+          }))
+        }
+      })
+      
+      formatted = null;
+    }
 
-        if (config.config) {
-            justifyConfigs(config.config)
+    if(!formatted) return;
+    if(clientListeners[type]) {
+      clientListeners[type].push(formatted)
+    } else {
+      clientListeners[type] = [formatted];
+    }
+  }
+
+  async post(text, data) {
+    data = data || {};
+
+    let images = data.images || [];
+    let group = data.groupid;
+
+    return new Promise(async (resolve, reject) => {
+      let form = new FormData()
+      form.append("data", JSON.stringify({ text }))
+      for(let i = 0; i != Math.min(images.length, 2); i++) {
+        form.append("image-" + i, fs.createReadStream(images[i]), "image.jpg")
+      }
+
+      let response = await axios.post(`${serverURL}posts/new${group?`?groupid=${group}`:''}`, form, {
+        headers: {
+          "auth": client.auth
+        }
+      })
+      if(response.status == 200) {
+        let [code2, postData] = await sendRequest(`${serverURL}posts?postid=${await response.data}${group?`&groupid=${group}`:''}`, 'GET')
+        if(code2 == 200) {
+          postData = JSON.parse(postData).posts[0];
+          resolve(new post({
+            post: postData,
+            user: client.userData,
+            group: group
+          }))
+        }
+      } else {
+        resolve(await response.data);
+      }
+    })
+  }
+  async createGroup({name, inviteType, image}) {
+    let form = new FormData()
+    form.append('data', JSON.stringify({name, invite: inviteType}))
+    if(image) {
+      form.append('image', fs.createReadStream(image))
+    }
+
+    let data = await fetch(serverURL + 'groups/new', {
+      method: 'POST',
+      body: form,
+      headers: {
+        "auth": client.auth
+      }
+    })
+
+    let [code, response] = await sendRequest(serverURL + 'groups?groupid=' + await data.text(), 'GET')
+    if(code == 200) {
+      response = JSON.parse(response);
+      return new group(response)
+    } else {
+      return await data.text()
+    }
+  }
+
+  async getPostById(postid, groupid) {
+    return new Promise(async (res, rej) => {
+      let [code, postData] = await sendRequest(serverURL + 'posts?postid=' + postid + (groupid?`&groupid=${groupid}`:''), 'GET')
+      if(code == 200) {
+        postData = JSON.parse(postData).posts[0];
+        let [code2, userData] = await sendRequest(serverURL + 'user?id=' + postData.UserID, 'GET')
+        if(code2 == 200) {
+          userData = JSON.parse(userData)
+        } else {
+          userData = null;
         }
 
-        loaded = true;
+        res(new post({
+          post: postData,
+          user: userData
+        }))
+      }
+    })
+  }
+  async getChatById(chatid) {
+    return new Promise(async (res, rej) => {
+      let [code, chatData] = await sendRequest(serverURL + 'chats?chatid=' + chatid, 'GET')
+      if(code == 200) {
+        chatData = JSON.parse(chatData).chats[0];
+        let [code2, userData] = await sendRequest(serverURL + 'user?id=' + chatData.UserID, 'GET')
+        if(code2 == 200) {
+          userData = JSON.parse(userData)
+        } else {
+          userData = null;
+        }
+
+        res(new chat({
+          chat: chatData,
+          user: userData
+        }))
+      }
+    })
+  }
+  async getBlocked() {
+    let [code, response] = await sendRequest(serverURL + 'me/blocked', 'GET')
+    if(code == 200) {
+      response = JSON.parse(response)
+      return response.map(a=> {
+        return new user(a)
+      })
+    } else {
+      return response;
+    }
+  }
+  async getUserById(userid) {
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'user?id=' + userid, 'GET')
+      if(code == 200) {
+        res(new user(JSON.parse(response)))
+      } else {
+        res(response)
+      }
+    })
+  }
+  async getUserByName(username) {
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'user?name=' + username, 'GET')
+      if(code == 200) {
+        res(new user(JSON.parse(response)))
+      } else {
+        res(response)
+      }
+    })
+  }
+  async getUsers(term) {
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'user/search?amount=15&term=' + term, 'GET')
+      if(code == 200) {
+        response = JSON.parse(response)
+        res(response.map(a=>{
+          return new user(a)
+        }))
+      } else {
+        res(response)
+      }
+    })
+  }
+  async getGroupById(groupid) {
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'groups?groupid=' + groupid, 'GET')
+      if(code == 200) {
+        res(new group(JSON.parse(response)))
+      } else {
+        res(response)
+      }
+    })
+  }
+  /*
+  async getMessages(conversationId) {
+    //
+  }
+  async getMessageById(messageId) {
+    //
+  }
+  async getConvo(conversationId) {
+    let [code, covnoData] = await sendRequest(serverURL + 'conversations?convid=' + conversationId, 'GET')
+    if(code == 200) {
+      covnoData = JSON.parse(response).conversations[0]
+    }
+
+    let [code2, userData] = await sendRequest(serverURL + 'user?id=' + covnoData.Creator, 'GET')
+    if(code2 == 200) {
+      userData = JSON.parse(userData)
+    } else {
+      userData = null;
     }
     
-    get postCache() {
-        return postcache;
+    if(code == 200) {
+      return new conversation({
+        convo: covnoData,
+        user: userData
+      })
     }
-
-    async on(type, callback) {
-        await botData;
-        switch(type) {
-            default:
-                throw new Error(`"${type}" is not a valid listener.`)
-
-            case 'post':
-                onPost.push([callback, 'on'])
-                break;
-            case 'invite':
-                onInvite.push(callback)
-                break;
-            case 'mention':
-                onMention.push(callback)
-                break;
-            case 'ready':
-                onReady.push(callback)
-                break;
-            case 'delete':
-                onDelete.push(callback)
-                break;
-            case 'cache':
-                onCache.push(callback)
-                break;
-
-            case 'newFollower':
-                socket.subscribe({
-                    task: 'profile',
-                    _id: botData.user._id
-                }, async function(data) {
-                    if (data.userID == botData.user._id) return;
-                    if (data.type != 'follow' || data.change < 0) return;
-                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
-                    response = JSON.parse(response)
-                    callback(new user(response))
-                })
-                break;
-            case 'unfollow':
-                socket.subscribe({
-                    task: 'profile',
-                    _id: botData.user._id
-                }, async function(data) {
-                    if (data.userID == botData.user._id) return;
-                    if (data.type != 'follow' || data.change > 0) return;
-                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
-                    response = JSON.parse(response)
-                    callback(new user(response))
-                })
-                break;
+  }
+  async getConvoRequests() {
+    let [code, response] = await sendRequest(serverURL + 'conversations/requests', 'GET')
+    if(code == 200) {
+      response = JSON.parse(response).conversations;
+      return response.map(async (a) => {
+        let [code2, userData] = await sendRequest(serverURL + 'user?id=' + response.Creator, 'GET')
+        if(code2 == 200) {
+          userData = JSON.parse(userData)
+        } else {
+          userData = null;
         }
+
+        return new conversationRequest({
+          convo: a,
+          user: userData
+        })
+      })
+    }
+  }*/
+
+  async groupInvites() {
+    let [code, response] = await sendRequest(serverURL + 'groups/invites?amount=75', 'GET')
+    if(code == 200) {
+      response = JSON.parse(response).invites;
+      return response.map(a => {
+        return new groupUserInvite(a)
+      })
+    } else {
+      return response;
+    }
+  }
+  async joinGroup({code, groupid}) {
+    var param;
+    if(code) {
+      param = `?code=${code}`;
+    } else if(groupid) {
+      param = `?groupid=${groupid}`;
     }
 
-    async onPost(callback, groupId) {
-        await botData;
-        if (groupId) {
-            socket.subscribe({
-                task: "general",
-                location: "home",
-                groups: [groupId]
-            }, async function(postData) {
-                if (!postData.post.GroupID) return;
-                let userData = JSON.parse(await request(url('user?id=' + postData.post.UserID), 'GET'))
-                postData = JSON.parse(await request(url('posts?postid=' + postData.post._id + '&groupid=' + groupId), 'GET', undefined, auth)).posts[0]
-                try {
-                    if (postData.Text.includes(`@${botData.user._id}`)) {
-                        onMention.forEach(async mentionConnection => {
-                            mentionConnection({
-                                user: new user(userData),
-                                data: {
-                                    type: 'post',
-                                    data: new post(postData, groupId, userData)
-                                }
-                            })
-                        })
-                    }
-                }catch(err){}
-                callback(new post(postData, groupId, userData))
-            })
-            return;
-        }
-        onPost.push(callback)
-    }
-    async onInvite(callback) {
-        await botData;
-        onInvite.push(callback)
-    }
-    async onMention(callback) {
-        await botData;
-        onMention.push(callback)
-    }
-    async onReady(callback) {
-        await botData;
-        onReady.push(callback)
-    }
-    async onDelete(callback) {
-        await botData;
-        onDelete.push(callback)
+    let [_, response] = await sendRequest(serverURL + 'groups/join' + param, 'PUT')
+    return response;
+  }
+  async leaveGroup(groupid) {
+    let [_, response] = await sendRequest(serverURL + 'groups/leave?groupid=' + groupid, 'DELETE')
+    return response;
+  }
+  async deletePost(postid) {
+    let [_, response] = await sendRequest(serverURL + 'posts/delete?postid=' + postid, 'DELETE')
+    return response;
+  }
+  async deleteChat(chatid) {
+    let [_, response] = await sendRequest(serverURL + 'chats/delete?chatid=' + chatid, 'DELETE')
+    return response;
+  }
+
+  async updateBio(newBio) {
+    let [_, response] = await sendRequest(serverURL + 'me/settings', 'POST', {
+      update: 'description',
+      value: newBio
+    })
+    return response;
+  }
+  async updateUsername(newUsername) {
+    let [_, response] = await sendRequest(serverURL + 'me/settings', 'POST', {
+      update: 'username',
+      value: newUsername
+    })
+    return response;
+  }
+  async updateVisibility(newVisi) {
+    let [_, response] = await sendRequest(serverURL + 'me/settings', 'POST', {
+      update: 'visibility',
+      value: newVisi
+    })
+    return response;
+  }
+  async updateProfilePic(newPic) {
+    let form = new FormData()
+    form.append('image', fs.createReadStream(newPic))
+    let data = await fetch(serverURL + 'me/new/picture', {
+      method: 'POST',
+      body: form,
+      headers: {
+        "auth": client.auth
+      }
+    })
+    return await data.text()
+  }
+  async updateBanner(newBanner) {
+    let form = new FormData()
+    form.append('image', fs.createReadStream(newBanner))
+    let data = await fetch(serverURL + 'me/new/banner', {
+      method: 'POST',
+      body: form,
+      headers: {
+        "auth": client.auth
+      }
+    })
+    return await data.text()
+  }
+
+  async unbanUser(userid) {
+    let [_, response] = await sendRequest(serverURL + 'mod/unban?userid=' + userid, 'PATCH')
+    return response;
+  }
+}
+
+class post {
+  constructor({post, user, group}) {
+    this.postData = post;
+    this.userData = user;
+    this.groupId = group;
+    this.connections = new Array();
+  }
+
+  get id() {
+    return this.postData._id;
+  }
+  get author() {
+    if(this.userData == null) return;
+
+    return new user(this.userData);
+  }
+  get text() {
+    return this.postData.Text;
+  }
+  get media() {
+    let data = [];
+    if(this.postData.Media) {
+      for(let i=0;i<this.postData.Media.ImageCount;i++) {
+        data.push(`${assetURL}PostImages/${this.postData._id}${i}`)
+      }
     }
 
-    async createDatabase() {
-        if (dbConnection) return;
-        await botData;
-        return new db()
+    return data;
+  }
+
+  async disconnect() {
+    this.connections.forEach(data => {
+      Object.keys(postListeners).forEach(listener => {
+        postListeners[listener].splice(data, 1)
+      })
+    })
+  }
+
+  async on(type, data) {
+    if(!data.callback && typeof data != 'function') return;
+    var formatted = typeof data == 'function'?data:data.callback;
+
+    switch(type) {
+      case 'delete':
+        formatted = [this.postData._id, formatted, 'delete'];
+        this.connections.push(formatted)
+        type = 'mainSocket';
+        break;
+      case 'edit':
+        formatted = [this.postData._id, formatted, 'edit'];
+        this.connections.push(formatted)
+        type = 'mainSocket';
+        break;
+      case 'like':
+        formatted = [this.postData._id, formatted, 'like'];
+        this.connections.push(formatted)
+        type = 'mainSocket';
+        break;
+      case 'dislike':
+        formatted = [this.postData._id, formatted, 'dislike'];
+        this.connections.push(formatted)
+        type = 'mainSocket';
+        break;
+      case 'chat':
+        formatted = [this.postData._id, formatted];
+        this.connections.push(formatted)
+        let formattedPostIds = postListeners['chat']?postListeners['chat'].map(a=>{
+          return a[0];
+        }):[];
+        formattedPostIds.push(this.postData._id)
+
+        let [code, response] = await sendRequest(serverURL + 'chats/connect' + (data.group?`?groupid=${data.group}`:''), 'POST', {
+          ssid: socket.secureID,
+          connect: formattedPostIds
+        })
+        break;
     }
 
-    async post(text, group = '', images = []) {
-        if (rate.post.time > (new Date().getTime())) {
-            console.log('Bot has been rate limited on posting.')
-            return;
-        }
-        rate.post.time = (new Date().getTime()) + 5000
-        return new Promise(async (resolve, reject) => {
-            let form = new FormData()
-            form.append("data", JSON.stringify({ text }))
-            for(let i = 0; i != Math.min(images.length, 2); i++) {
-                form.append("image-" + i, fs.createReadStream(images[i]), "image.jpg")
-            }
-            const response1 = await fetch(url('posts/new' + (group == "" ? group : "?groupid=" + group)), {
-                method: "POST",
-                body: form,
-                headers: {
-                    auth: auth
-                }
-            })
-            const response = await response1.text()
-    
-            if (botConfigurations.photopstats) {
-                aboobySocket.publish({task: 'botPost'}, {})
-            }
-
-            aboobySocket.publish({
-                task: 'aboobyAboobs'
-            }, {userid: botData.user._id, type: 'post', data: response})
-    
-            let response2 = JSON.parse(await request(url('posts?postid=' + response + (group == "" ? group : "&groupid=" + group)), 'GET', undefined, auth))
-            resolve(new selfPost(response2.posts[0], group))
-        })
-    }
-    async userData() {
-        return new Promise(async (res, rej) => {
-            let response = await request(
-                url('me'),
-                'GET',
-                undefined,
-                this.auth
-            )
-            response = JSON.parse(response)
-            let userPostData = JSON.parse(await request(url('posts?userid=' + response.user._id + '&amount=100'), 'GET')).posts
-            res({
-                user: new user(response.user),
-                getPosts: function() {
-                    return new Promise(async (res, rej) => {
-                        const posts = await format('posts', userPostData)
-                        if (!posts) {
-                            rej(userPostData)
-                        } else {
-                            res(posts)
-                        }
-                    })
-                },
-                getGroups: function() {
-                    return new Promise(async (res, rej) => {
-                        const groups = await format('groups', response.groups)
-                        if (!groups) {
-                            rej(response.groups)
-                        } else {
-                            res(groups)
-                        }
-                    })
-                }
-            })
-        })
-    }
-    async notify(userid, config) {
-        if (!userid) return;
-        if (!config) return;
-        if (!config.title) return;
-        if (!config.content) return;
-
-        aboobySocket.publish({task: 'sendNotif'}, {title: config.title, content: config.content, userId: userid, authorId:botData.user._id})
+    if(postListeners[type]) {
+      postListeners[type].push(formatted)
+    } else {
+      postListeners[type] = [formatted];
     }
 
-    async getPostById(id, groupId) {
-        return new Promise(async (resolve, reject) => {
-            let response = await request(url('posts?postid=' + id + (groupId ? "&groupid=" + groupId : "")), 'GET')
-            let postData;
-            try {
-                postData = JSON.parse(response).posts[0]
-            } catch(err) {
-                reject(response)
-            }
-            if (postData.UserID == botData.user._id) {
-                resolve(new selfPost(postData, undefined))
-            } else {
-                resolve(new post(postData, undefined))
-            }
+    refreshPostSocket()
+  }
+
+  cache() {
+    postCache.push([
+      this.postData,
+      this.userData,
+      this.groupId
+    ])
+  }
+
+  async chat(text, replyID) {
+    let [code, response] = await sendRequest(serverURL + 'chats/new?postid=' + this.postData._id, 'POST', {
+      text,
+      replyID
+    })
+
+    if(code == 200) {
+      let [code2, chatData] = await sendRequest(serverURL + 'chats?chatid=' + response, 'GET')
+      if(code2 == 200) {
+        chatData = JSON.parse(chatData).chats[0];
+        return new chat({
+          chat: chatData,
+          user: client.userData
         })
-    }
-    async getChatById(id) {
-        return new Promise(async (resolve, reject) => {
-            let response = await request(url('chats?chatid=' + id), 'GET')
-            let chatData;
-            try {
-                chatData = JSON.parse(response).chats[0]
-            } catch(err) {
-                reject(response)
-            }
-            if (chatData.UserID == botData.user._id) {
-                resolve(new selfChat(chatData))
-            } else {
-                resolve(new chat(chatData))
-            }
-        })
-    }
-    async getGroupById(id) {
-        return new Promise(async (resolve, reject) => {
-            let groupData = await request(url('groups?groupid=' + id), 'GET', undefined, auth)
-            try {
-                groupData = JSON.parse(groupData)
-            } catch(err) {
-                reject(groupData)
-            }
-            let users = await request(url(`groups/members?groupid=${id}`), 'GET', undefined, auth)
-            try {
-                users = JSON.parse(users)
-            } catch(err) {
-                reject(users)
-            }
-            resolve(new group(groupData, users))
-        })
-    }
-    async getUserById(id) {
-        return new Promise(async (resolve, reject) => {
-            let response = await request(url('user?id=' + id), 'GET')
-            try {
-                JSON.parse(response)
-            } catch(err) {
-                reject(response)
-            }
-            resolve(new user(response))
-        })
-    }
-    async getUserByName(name) {
-        return new Promise(async (resolve, reject) => {
-            let response = await request(url('user?name=' + name), 'GET')
-            try {
-                JSON.parse(response)
-            } catch(err) {
-                reject(response)
-            }
-            resolve(new user(response))
-        })
-    }
-    async joinGroup(id) {
-        let response = await request(url('groups/join?groupid=' + id), 'PUT', undefined, this.auth)
+      } else {
         return response;
+      }
     }
+  }
+  async edit(text) {
+    let form = new FormData()
+    form.append('data', JSON.stringify({text}))
 
-    async deletePost(id) {
-        let response = await request(url('posts/delete?postid=' + id), 'DELETE', undefined, this.auth)
-        return response;
-    }
-    async deleteChat(id) {
-        let response = await request(url('chats/delete?chatid=' + id), 'DELETE', undefined, this.auth)
-        return response;
-    }
+    let data = await fetch(serverURL + 'posts/edit?postid=' + this.postData._id, {
+      method: 'POST',
+      body: form,
+      headers: {
+        "auth": client.auth
+      }
+    })
 
-    async updateBio(text) {
-        let response = await request(url('me/settings'), 'POST', {
-            update: 'description',
-            value: text
-        }, this.auth)
-        return response;
-    }
-    async updateUsername(username) {
-        let response = await request(url('me/settings'), 'POST', {
-            update: 'username',
-            value: username
-        }, this.auth)
-        return response;
-    }
-    async updateVisibility(visi) {
-        let response = await request(url('me/settings'), 'POST', {
-            update: 'visibility',
-            value: visi
-        }, this.auth)
-        return response;
-    }
-    async updateProfilePic(image) {
-        var formData = new FormData()
-        formData.append('image', fs.createReadStream(image))
-        let response = await fetch(url('me/new/picture'), {
-            method: 'POST',
-            body: formData,
-            headers: {
-                auth: this.auth
-            }
-        })
-        return response.text();
-    }
-    async updateBanner(image) {
-        var formData = new FormData()
-        formData.append('image', fs.createReadStream(image))
-        let response = await fetch(url('me/new/banner'), {
-            method: 'POST',
-            body: formData,
-            headers: {
-                auth: this.auth
-            }
-        })
-        return response.text();
-    }
+    return await data.text()
+  }
+  async delete() {
+    let [_, response] = await sendRequest(serverURL + 'posts/delete?postid=' + this.postData._id, 'DELETE')
+    return response;
+  }
 
-    async reconnect(callback) {
-        if (!dbConnection) return 'No db connected.';
-        const connections = await dbConnection.get('connectedposts')
-        const response = await request(url('chats/connect'), 'POST', {ssid: socket.secureID, connect: connections, posts: connections})
-        connections.forEach(async connection => {
-            const postData = JSON.parse(await request(url('posts?postid=' + connection), 'GET', undefined, auth)).posts[0]
-            if (!postData) return;
-            const userData = JSON.parse(await request(url('user?id=' + postData.UserID), 'GET', undefined, auth))
-            if (!userData) return;
-            chatConnects.push(connection)
-            setTimeout(function() {
-                callback(new post(postData, undefined, userData))
-            }, 1500 * connections.indexOf(connection))
-        })
-    }
+  async pin() {
+    let [_, response] = await sendRequest(serverURL + 'posts/pin?postid=' + this.postData._id, 'PUT')
+    return response;
+  }
+  async unpin() {
+    let [_, response] = await sendRequest(serverURL + 'posts/unpin?postid=' + this.postData._id, 'DELETE')
+    return response;
+  }
+  async like() {
+    let [_, response] = await sendRequest(serverURL + 'posts/like?postid=' + this.postData._id, 'PUT')
+    return response;
+  }
+  async dislike() {
+    let [_, response] = await sendRequest(serverURL + 'posts/unlike?postid=' + this.postData._id, 'DELETE')
+    return response;
+  }
+
+  async report({reason, report}) {
+    let [_, response] = await sendRequest(serverURL + 'mod/report?contentid=' + this.postData._id + '&type=post', 'PUT', {
+      reason,
+      report
+    })
+    return response;
+  }
 }
 
 class user {
-    constructor(userData) {
-        this.userData = userData
+  constructor(data) {
+    this.userData = data;
+  }
+
+  get bot() {
+    return this.userData._id == client.userData._id?true:false;
+  }
+  get ping() {
+    return `@${this.userData._id}"${this.userData.User}"`
+  }
+  get id() {
+    return this.userData._id;
+  }
+  get name() {
+    return this.userData.User;
+  }
+  get status() {
+    let parsedStatus;
+    switch(this.userData.Status) {
+      case 0:
+        parsedStatus = 'Offline';
+        break;
+      case 1:
+        parsedStatus = 'Online';
+        break;
+      case 2:
+        parsedStatus = 'In Group';
+        break;
     }
 
-    get bot() {
-        return this.userData._id == botData.user._id?true:false;
+    return {
+      raw: this.userData.Status,
+      parsed: parsedStatus
+    };
+  }
+  get settings() {
+    return {
+      profilePicture: assetURL + 'ProfileImages/' + this.userData.Settings.ProfilePic,
+      profileBanner: assetURL + 'ProfileBanners/' + this.userData.Settings.ProfileBanner,
+      description: this.userData.ProfileData.Description,
+      visibility: this.userData.ProfileData.Visibility,
+      pinnedPost: this.userData.ProfileData.PinnedPost
     }
-    get ping() {
-        return `@${this.userData._id}"${this.userData.User}"`
+  }
+
+  get followers() {
+    return this.userData.ProfileData.Followers
+  }
+  get following() {
+    return this.userData.ProfileData.Following
+  }
+  async parsedFollowers() {
+    let [code, response] = await sendRequest(serverURL + 'user/followers?amount=50&userid=' + this.userData._id, 'GET')
+    if(code == 200) {
+      response = JSON.parse(response)
+      response.map(a => {
+        return new user(a)
+      })
+    } else {
+      return response;
     }
-    get id() {
-        return this.userData._id
+  }
+  async parsedFollowing() {
+    let [code, response] = await sendRequest(serverURL + 'user/following?amount=50&userid=' + this.userData._id, 'GET')
+    if(code == 200) {
+      response = JSON.parse(response)
+      response.map(a => {
+        return new user(a)
+      })
+    } else {
+      return response;
     }
-    get username() {
-        return this.userData.User
-    }
-    get roles() {
-        return this.userData.Role
-    }
-    get settings() {
-        return {
-            profilePicture: this.userData.Settings.ProfilePic,
-            profileBanner: this.userData.Settings.ProfileBanner,
-            description: this.userData.ProfileData.Description,
-            visibility: this.userData.ProfileData.visibility
-        }
-    }
-    get rawFollows() {
-        return {
-            following: this.userData.ProfileData.following,
-            followers: this.userData.ProfileData.followers
-        }
+  }
+
+  async on(type, data) {
+    if(!data.callback && typeof data != 'function') return;
+    var formatted = typeof data == 'function'?data:data.callback;
+
+    switch(type) {
+      case 'followed':
+        break;
+      case 'unfollowed':
+        break;
     }
 
-    async on(type, callback) {
-        await botData;
-        if (!this.authorData) return;
-        switch (type) {
-            default:
-                throw new Error(`"${type}" is not a user listener.`)
+    if(!formatted) return;
+    if(userListeners[type]) {
+      userListeners[type].push(formatted)
+    } else {
+      userListeners[type] = [formatted];
+    }
+  }
 
-            case 'newFollower':
-                socket.subscribe({
-                    task: 'profile',
-                    _id: this.authorData._id
-                }, async function(data) {
-                    if (data.userID == this.authorData._id) return;
-                    if (data.type != 'follow' || data.change < 0) return;
-                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
-                    response = JSON.parse(response)
-                    callback(new user(response))
-                })
-                break;
-            case 'unfollow':
-                socket.subscribe({
-                    task: 'profile',
-                    _id: this.authorData._id
-                }, async function(data) {
-                    if (data.userID == this.authorData._id) return;
-                    if (data.type != 'follow' || data.change > 0) return;
-                    var response = await request(url('user?id=' + data.userID), 'GET', undefined, auth)
-                    response = JSON.parse(response)
-                    callback(new user(response))
-                })
-                break;
-        }
-    }
+  async follow() {
+    let [_, response] = await sendRequest(serverURL + 'user/follow?userid=' + this.userData._id, 'PUT')
+    return response;
+  }
+  async unfollow() {
+    let [_, response] = await sendRequest(serverURL + 'user/unfollow?userid=' + this.userData._id, 'PUT')
+    return response;
+  }
+  async block() {
+    let [_, response] = await sendRequest(serverURL + 'user/block?userid=' + this.userData._id, 'PUT')
+    return response;
+  }
+  async unblock() {
+    let [_, response] = await sendRequest(serverURL + 'user/unblock?userid=' + this.userData._id, 'PUT')
+    return response;
+  }
+  async ban({length, reason, terminate}) {
+    let [_, response] = await sendRequest(serverURL + 'mod/ban?userid=' + this.userData._id, 'DELETE', {
+      length,
+      reason,
+      terminate
+    })
+    return response;
+  }
 
-    async parsedFollows() {
-        return new Promise(async (res, rej) => {
-            let response = JSON.parse(await request(url('user/followers'), 'GET', undefined, auth))
-            let response2 = JSON.parse(await request(url('user/following'), 'GET', undefined, auth))
-            res({
-                followers: response,
-                following: response2
-            })
-        })
-    }
-
-    async follow() {
-        let response = await request(url('user/follow?userid=' + this.id), 'PUT', {}, auth)
-        return response;
-    }
-    async unfollow() {
-        let response = await request(url('user/unfollow?userid=' + this.id), 'PUT', {}, auth)
-        return response;
-    }
-    async status() {
-        return {
-            parsed: await format('status', this.userData.Status),
-            raw: this.userData.Status
-        }
-    }
-    async report(reason, report) {
-        let response = await request(url('mod/report?contentid=' + this.id + '&type=user'), 'PUT', {
-            reason: reason,
-            report: report
-        }, auth)
-        return response;
-    }
-    async ban(length, reason, terminate = false) {
-        let response = await request(url('mod/ban?userid=' + this.id), 'DELETE', {
-            length: length,
-            reason: reason,
-            terminate: terminate
-        }, auth)
-        return response;
-    }
-    async unban() {
-        let response = await request(url('mod/unban?userid=' + this.id), 'PATCH', undefined, auth)
-        return response;
-    }
-}
-
-let currentConnections = [];
-class post {
-    constructor(response, group, user) {
-        this.post = response
-        Object.defineProperty(this, 'authorData', {value: user})
-        this.group = group
-    }
-
-    async on(type, callback) {
-        switch(type) {
-            default:
-                throw new Error(`"${type}" is not a post listener.`)
-            
-            case 'chat':
-                if (dbConnection) {
-                    const connections = await dbConnection.get('connectedposts')
-                    if (!connections) return;
-                    if (connections.length >= 15) {
-                        connections.splice(15, 1)
-                    }
-                    connections.unshift(this.post._id)
-                    dbConnection.set('connectedposts', connections)
-                }
-                let groupId = (this.group?'?groupid=' + this.group:'')
-                chatConnects.push([this.post._id, callback])
-                currentConnections.push(this.post._id)
-                const response = await request(url('chats/connect' + groupId), 'POST', {ssid: socket.secureID, connect: currentConnections, posts: currentConnections})
-                return response;
-
-            case 'like':
-                onLike[this.id] = callback;
-                break;
-            case 'edit':
-                onEdit.post.push(callback)
-                break;
-        }
-    }
-
-    get id() {
-        return this.post._id
-    }
-    get author() {
-        if (!this.authorData) {
-            return 'User data missing.'
-        }
-        return new user(this.authorData)
-    }
-    get text() {
-        return this.post.Text
-    }
-    get stats() {
-        return {
-            likes: this.post.Likes,
-            quotes: this.post.Quotes,
-            chats: this.post.Chats
-        }
-    }
-    
-    cache() {
-        postcache.push(new post(this.post, this.group, this.authorData))
-        onCache.forEach(cache => {
-            cache(new post(this.post, this.group, this.authorData))
-        })
-    }
-
-    async report(reason, report) {
-        let response = await request(url('mod/report?contentid=' + this.id + '&type=post'), 'PUT', {
-            reason: reason,
-            report: report
-        }, auth)
-        return response;
-    }
-    async onChat(callback) {
-        if (dbConnection) {
-            const connections = await dbConnection.get('connectedposts')
-            if (!connections) return;
-            if (connections.length >= 15) {
-                connections.splice(15, 1)
-            }
-            connections.unshift(this.post._id)
-            dbConnection.set('connectedposts', connections)
-        }
-        let groupId = (this.group?'?groupid=' + this.group:'')
-        chatConnects.push([this.post._id, callback])
-        currentConnections.push(this.post._id)
-        const response = await request(url('chats/connect' + groupId), 'POST', {ssid: socket.secureID, connect: currentConnections, posts: currentConnections})
-        return response;
-    }
-    async onLike(callback) {
-        onLike[this.id] = callback;
-    }
-    async onEdit(callback) {
-        onEdit.post.push(callback)
-    }
-    async chat(text) {
-        if (rate.chat.time > (new Date().getTime())) {
-            console.log('Bot has been rate limited on chatting.')
-            return;
-        }
-        rate.chat.time = (new Date().getTime()) + 1000
-        let response = await request(url('chats/new?postid=' + this.post._id), 'POST', {
-            text: text
-        }, auth)
-        let response2 = JSON.parse(await request(url('chats?chatid=' + response), 'GET')).chats[0]
-        return new selfChat(response2);
-    }
-    
-    async delete() {
-        const response = await request(url(`posts/delete?postid=${this.post._id}`), 'DELETE', undefined, auth)
-        return response;
-    }
-}
-class selfPost extends post {
-    constructor(response, group) {
-        super(response, group, botData)
-        this.post = response
-        this.group = group
-    }
-
-    async edit(text, images = []) {
-        let form = new FormData()
-        form.append("data", JSON.stringify({ text }))
-        for(let i = 0; i != Math.min(images.length, 2); i++) {
-            form.append("image-" + i, images[i], "image.jpg")
-        }
-        const response = await fetch(url("posts/edit?postid=" + this.post._id), {
-            method: "POST",
-            body: form,
-            headers: {
-                auth: auth
-            }
-        })
-        return response.text();
-    }
-    async pin() {
-        let response = await request(url('posts/pin?postid=' + this.post._id), 'PUT', {}, auth)
-        return response;
-    }
-    async unpin() {
-        let response = await request(url('posts/unpin?postid=' + this.post._id), 'DELETE', {}, auth)
-        return response;
-    }
-}
-class deletedPost {
-    constructor(response) {
-        this.post = response
-    }
-
-    get id() {
-        return this.post._id
-    }
-}
-class editedPost {
-    constructor(response) {
-        this.post = response
-    }
-
-    get id() {
-        return this.post._id
-    }
-    get text() {
-        return this.post.text
-    }
+  async report({reason, report}) {
+    let [_, response] = await sendRequest(serverURL + 'mod/report?contentid=' + this.userData._id + '&type=user', 'PUT', {
+      reason,
+      report
+    })
+    return response;
+  }
 }
 
 class chat {
-    constructor(chat, user) {
-        this.chat = chat
-        Object.defineProperty(this, 'authorData', {value: user})
-    }
-    get author() {
-        if (!this.authorData) {
-            return 'User data missing.'
-        }
-        return new user(this.authorData)
-    }
-    get id() {
-        return this.chat._id
-    }
-    get text() {
-        return this.chat.Text
+  constructor({chat, user}) {
+    this.chatData = chat;
+    this.userData = user;
+  }
+
+  get id() {
+    return this.chatData._id;
+  }
+  get author() {
+    if(this.userData == null) return;
+
+    return new user(this.userData)
+  }
+  get text() {
+    return this.chatData.Text;
+  }
+  get postid() {
+    return this.chatData.PostID;
+  }
+  get replyid() {
+    return this.chatData.ReplyID;
+  }
+
+  async on(type, data) {
+    if(!data.callback && typeof data != 'function') return;
+    var formatted = typeof data == 'function'?data:data.callback;
+
+    switch(type) {
+      case 'edit':
+        formatted = [this.chatData._id, formatted];
+        break;
+      case 'delete':
+        formatted = [this.chatData._id, formatted];
+        break;
     }
 
-    async on(type, callback) {
-        await botData;
-        switch (type) {
-            default:
-                throw new Error(`"${type}" is not a chat listener.`)
-
-            case 'edit':
-                onEdit.chat.push(callback)
-                break;
-        }
+    if(chatListeners[type]) {
+      chatListeners[type].push(formatted)
+    } else {
+      chatListeners[type] = [formatted];
     }
+  }
 
-    async reply(text) {
-        let response = await request(url('chats/new?postid=' + this.chat.PostID), 'POST', {
-            text: text,
-            replyID: this.chat._id
-        }, auth)
-        let response2 = JSON.parse(await request(url('chats?chatid=' + response), 'GET')).chats[0]
-        return new selfChat(response2);
-    }
-    async report(reason, report) {
-        let response = await request(url('mod/report?contentid=' + this.id + '&type=chat'), 'PUT', {
-            reason: reason,
-            report: report
-        }, auth)
+  async reply(text) {
+    let [code, response] = await sendRequest(serverURL + 'chats/new?postid=' + this.chatData.PostID, 'POST', {
+      text,
+      replyID: this.chatData._id
+    })
+
+    if(code == 200) {
+      let [code2, response2] = await sendRequest(serverURL + 'chats?chatid=' + response, 'GET')
+      if(code2 == 200) {
+        return new chat({
+          chat: JSON.parse(response2).chats[0],
+          user: client.userData
+        })
+      } else {
         return response;
+      }
+    } else {
+      return response;
     }
+  }
+  async edit(text) {
+    let [_, response] = await sendRequest(serverURL + 'chats/edit?chatid=' + this.chatData._id, 'POST', {
+      text
+    })
+    return response;
+  }
+  async delete() {
+    let [_, response] = await sendRequest(serverURL + 'chats/delete?chatid=' + this.chatData._id, 'DELETE')
+    return response;
+  }
 
-    async onEdit(callback) {
-        onEdit.chat.push(callback)
-    }
+  async report({reason, report}) {
+    let [_, response] = await sendRequest(serverURL + 'mod/report?contentid=' + this.chatData._id + '&type=chat', 'PUT', {
+      reason,
+      report
+    })
+    return response;
+  }
 }
-class selfChat extends chat {
-    constructor(response) {
-        super(response, botData)
-        this.chat = response
-    }
 
-    async delete() {
-        const response = await request(url(`chats/delete?chatid=${this.chat._id}`), 'DELETE', undefined, auth)
-        return response;
-    }
-    async edit(text) {
-        const response = await request(url(`chats/edit?chatid=${this.chat._id}`), 'PUT', {
-            text: text
-        }, auth)
-        return response;
-    }
+class conversation {
+  //
 }
-class deletedChat {
-    constructor(response) {
-        this.chat = response
-    }
-
-    get id() {
-        return this.chat.chatID
-    }
+class conversationRequest {
+  //
 }
-class editedChat {
-    constructor(response) {
-        this.chat = response
-    }
-
-    get id() {
-        return this.chat.chatID
-    }
-    get text() {
-        return this.chat.text
-    }
+class message {
+  //
 }
 
 class group {
-    constructor(response, users) {
-        this.group = response.groups?response.groups[0]:response,
-        this.users = users
-    }
+  constructor(data) {
+    this.groupData = data;
+  }
 
-    get id() {
-        return this.group._id
-    }
-    get name() {
-        return this.group.Name
-    }
-    get owner() {
-        return this.group.Owner
-    }
+  get id() {
+    return this.groupData._id;
+  }
+  get name() {
+    return this.groupData.Name;
+  }
+  get owner() {
+    return this.groupData.Owner
+  }
 
-    async on(type, callback) {
-        await botData;
-        switch(type) {
-            default:
-                throw new Error(`"${type}" is not a group listener.`)
+  async on(type, data) {
+    if(!data.callback && typeof data != 'function') return;
+    var formatted = typeof data == 'function'?data:data.callback;
+    var send = true;
 
-            case 'newMember':
-                socket.subscribe({
-                    task: 'group',
-                    groupID: this.group._id
-                }, async function(data) {
-                    if (data.type != 'member') return;
-                    var response = await request(url('user?id=' + data.member._id), 'GET', undefined, auth)
-                    response = JSON.parse(response[1])
-                    callback(new user(response))
-                })
-                break;
-        }
-    }
-
-    async connect(callback) {
-        const groupId = this.group._id
-        socket.subscribe({
-            task: "general",
-            location: "home",
-            groups: [groupId]
-        }, async function(postData) {
-            if (!postData.post.GroupID) return;
-            let userData = JSON.parse(await request(url('user?id=' + postData.post.UserID), 'GET'))
-            postData = JSON.parse(await request(url('posts?postid=' + postData.post._id + '&groupid=' + groupId), 'GET', undefined, auth)).posts[0]
-            try {
-                if (postData.Text.includes(`@${botData.user._id}`)) {
-                    onMention.forEach(async mentionConnection => {
-                        mentionConnection({
-                            user: new user(userData),
-                            data: {
-                                type: 'post',
-                                data: new post(postData, groupId, userData)
-                            }
-                        })
-                    })
-                }
-            }catch(err){}
-            callback(new post(postData, groupId, userData))
-        })
-    }
-
-    async getUsers() {
-        return new Promise(async (res, rej) => {
-            const users = await format('users', this.users)
-
-            await sleep(500)
-            res(users)
-        })
-    }
-    async leave() {
-        let response = await request(url('groups/leave?groupid=' + this.group._id), 'DELETE', undefined, auth)
-        return response;
-    }
-
-    async invite(id) {
-        let response = await request(url('groups/invite?groupid=' + this.group._id), 'POST', {
-            type: 'user',
-            data: id
-        }, auth)
-        return response;
-    }
-
-    async kick(id) {
-        let response = await request(url('groups/moderate?groupid=' + this.group._id), 'PUT', {
-            type: 'kick',
-            data: id
-        }, auth)
-        return response;
-    }
-    async edit(obj) {
-        let form = new FormData()
-        let query = {}
-        if (obj.name) {
-            query.name = obj.name
-        }
-        if (obj.invite) {
-            query.invite = obj.invite
-        }
-        form.append("data", JSON.stringify(query))
-        const response = await fetch(url("groups/edit?groupid=" + this.group._id), {
-            method: "PUT",
-            body: form,
-            headers: {
-                auth: auth
+    switch(type) {
+      case 'newMember':
+        console.log('The "newMember" listener for groups isnt complete at this time.')
+        /*socket.subscribe({
+          task: 'group',
+          groupID: this.groupData._id
+        }, async function(data) {
+          console.log(data)
+          if(data.type == 'member' && data.member.Status != -1) {
+            let [code, userData] = await sendRequest(serverURL + 'user?id=' + data.member._id, 'GET')
+            if(code == 200) {
+              formatted(new user(JSON.parse(userData)))
             }
+          }
+        })*/
+        break;
+      case 'post':
+        const groupId = this.groupData._id;
+        socket.subscribe({
+          task: "general",
+          location: "home",
+          groups: [this.groupData._id]
+        }, async function(data) {
+          if (!data.post.GroupID) return;
+          let postData = data.post;
+          
+          let [code, userData] = await sendRequest(serverURL + 'user?id=' + postData.UserID, 'GET')
+          if(code == 200) {
+            userData = JSON.parse(userData)
+          } else {
+            userData = null;
+          }
+  
+          let [code2, postResponse] = await sendRequest(serverURL + 'posts?postid=' + postData._id + '&groupid=' + groupId, 'GET')
+          if(code2 == 200) {
+            postResponse = JSON.parse(postResponse).posts[0];
+            formatted(new post({
+              post: postResponse,
+              user: userData,
+              group: groupId
+            }))
+          }
         })
-        return response.text()
+        send = false;
+        break;
     }
+
+    if(!send) return;
+    if(groupListeners[type]) {
+      groupListeners[type].push(formatted)
+    } else {
+      groupListeners[type] = [formatted];
+    }
+  }
+
+  async post(text, data) {
+    data = data || {};
+
+    let images = data.images || [];
+    let group = this.groupData._id;
+
+    return new Promise(async (resolve, reject) => {
+      let form = new FormData()
+      form.append("data", JSON.stringify({ text }))
+      for(let i = 0; i != Math.min(images.length, 2); i++) {
+        form.append("image-" + i, fs.createReadStream(images[i]), "image.jpg")
+      }
+
+      let response = await axios.post(`${serverURL}posts/new${group?`?groupid=${group}`:''}`, form, {
+        headers: {
+          "auth": client.auth
+        }
+      })
+      if(response.status == 200) {
+        let [code2, postData] = await sendRequest(`${serverURL}posts?postid=${await response.data}${group?`&groupid=${group}`:''}`, 'GET')
+        if(code2 == 200) {
+          postData = JSON.parse(postData).posts[0];
+          resolve(new post({
+            post: postData,
+            user: client.userData,
+            group: group
+          }))
+        }
+      } else {
+        resolve(await response.data);
+      }
+    })
+  }
+
+  async getUsers() {
+    let [code, response] = await sendRequest(serverURL + 'groups/members?groupid=' + this.groupData._id, 'GET')
+    if(code == 200) {
+      response = JSON.parse(response)
+      return response.map(a => {
+        return new user(a)
+      })
+    } else {
+      return response;
+    }
+  }
+  async kick(userid) {
+    let [_, response] = await sendRequest(serverURL + 'groups/moderate?groupid=' + this.groupData._id, 'PUT', {
+      type: 'kick',
+      data: userid
+    })
+    return response;
+  }
+  async edit({name, inviteType, image}) {
+    let form = new FormData()
+    form.append('data', JSON.stringify({name, invite: inviteType}))
+    if(image) {
+      form.append('image', fs.createReadStream(image))
+    }
+
+    let data = await fetch(serverURL + 'groups/edit?groupid=' + this.groupData._id, {
+      method: 'POST',
+      body: form,
+      headers: {
+        "auth": client.auth
+      }
+    })
+
+    return await data.text()
+  }
+  async leave() {
+    let [_, response] = await sendRequest(serverURL + 'groups/leave?groupid=' + this.groupData._id, 'DELETE')
+    return response;
+  }
+  async invite(userid) {
+    let [_, response] = await sendRequest(serverURL + 'groups/invite?groupid=' + this.groupData._id, 'POST', {
+      type: 'user',
+      data: userid
+    })
+    return response;
+  }
+  async createLink() {
+    let [_, response] = await sendRequest(serverURL + 'groups/invite?groupid=' + this.groupData._id, 'POST', {
+      type: 'link',
+      data: new Date() + (((60000 * 60) * 24) * 365)
+    })
+    return response;
+  }
+  async invites() {
+    return new Promise(async (res, rej) => {
+      let [code, users] = await sendRequest(serverURL + 'groups/sentinvites?groupid=' + this.groupData._id + '&type=user&amount=200', 'GET')
+      let [code2, links] = await sendRequest(serverURL + 'groups/sentinvites?groupid=' + this.groupData._id + '&type=link&amount=200', 'GET')
+      if(code == 200) {
+        users = JSON.parse(users).members
+      } else {
+        users = [];
+      }
+      if(code2 == 200) {
+        links = JSON.parse(links).links
+      } else {
+        links = [];
+      }
+
+      res({
+        users: users.map(a => {
+          return new groupInvite(a)
+        }),
+        links: links.map(a => {
+          return new groupInvite(a)
+        })
+      })
+    })
+  }
 }
 class groupInvite {
-    constructor(response) {
-        this.group = response
-    }
-    
-    async accept() {
-        let response = await request(url('groups/join?groupid=' + this.group._id), 'PUT', {}, auth)
-        let groupData = JSON.parse(await request(url('groups?groupid=' + this.group._id), 'GET', undefined, auth))
-        return new group(groupData);
-    }
-    async deny() {
-        let invite = (await this.invites())[0]
-        let response = await request(url('groups/revoke?inviteid=' + invite._id), 'DELETE', {}, auth)
-        return response;
-    }
+  constructor(data) {
+    this.inviteData = data;
+  }
+
+  async revoke() {
+    let [_, response] = await sendRequest(serverURL + 'groups/revoke?inviteid=' + this.inviteData._id, 'DELETE')
+    return response;
+  }
+}
+class groupUserInvite {
+  constructor(data) {
+    this.inviteData = data;
+    console.log(data)
+  }
+
+  async accept() {
+    let [_, response] = await sendRequest(serverURL + 'groups/join?code=' + this.inviteData._id, 'PUT')
+    return response;
+  }
+  async deny() {
+    let [_, response] = await sendRequest(serverURL + 'groups/revoke?inviteid=' + this.inviteData._id, 'DELETE')
+    return response;
+  }
 }
 
-async function initDB() {
-    if (!await dbConnection.get('connectedposts')) {
-        dbConnection.set('connectedposts', [])
-    }
-}
-export class db {
-    constructor() {
-        this.database = new JSONdb('aboobyclientstorage.json')
-        dbConnection = this.database
-        initDB()
-    }
-
-    async get(filter) {
-        return JSON.parse(await this.database.get(filter))
-    }
-    async create(filter, data) {
-        return new Promise(async (res, rej) => {
-            if (this.database.get(filter)) {
-                rej()
-            }
-            const creation = await this.database.set(filter, data)
-            res()
-        })
-    }
-    async save(filter, data) {
-        return new Promise(async (res, rej) => {
-            if (!this.database.get(filter)) {
-                rej()
-            }
-            const save = await this.database.set(filter, data)
-            res()
-        })
-    }
-}
-
-export default Client
+export default Client;
