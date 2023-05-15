@@ -461,15 +461,17 @@ export class Client {
     })
   }
   async getBlocked() {
-    let [code, response] = await sendRequest(serverURL + 'me/blocked', 'GET')
-    if(code == 200) {
-      response = JSON.parse(response)
-      return response.map(a=> {
-        return new user(a)
-      })
-    } else {
-      return response;
-    }
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'me/blocked', 'GET')
+      if(code == 200) {
+        response = JSON.parse(response)
+        res(response.map(a=> {
+          return new user(a)
+        }))
+      } else {
+        res(response);
+      }
+    })
   }
   async getUserById(userid) {
     return new Promise(async (res, rej) => {
@@ -562,15 +564,17 @@ export class Client {
   }*/
 
   async groupInvites() {
-    let [code, response] = await sendRequest(serverURL + 'groups/invites?amount=75', 'GET')
-    if(code == 200) {
-      response = JSON.parse(response).invites;
-      return response.map(a => {
-        return new groupUserInvite(a)
-      })
-    } else {
-      return response;
-    }
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'groups/invites?amount=75', 'GET')
+      if(code == 200) {
+        response = JSON.parse(response).invites;
+        res(response.map(a => {
+          return new groupUserInvite(a)
+        }))
+      } else {
+        res(response);
+      }
+    })
   }
   async joinGroup({code, groupid}) {
     var param;
@@ -676,6 +680,13 @@ class post {
     }
 
     return data;
+  }
+  get stats() {
+    return {
+      likes: this.postData.Likes,
+      quotes: this.postData.Quotes,
+      chats: this.postData.Chats
+    }
   }
 
   async disconnect() {
@@ -824,6 +835,13 @@ class user {
   get name() {
     return this.userData.User;
   }
+  get roles() {
+    if (typeof this.userData.Role == 'string') {
+      return [this.userData.Role];
+    } else {
+      return this.userData.Role;
+    }
+  }
   get status() {
     let parsedStatus;
     switch(this.userData.Status) {
@@ -860,26 +878,30 @@ class user {
     return this.userData.ProfileData.Following
   }
   async parsedFollowers() {
-    let [code, response] = await sendRequest(serverURL + 'user/followers?amount=50&userid=' + this.userData._id, 'GET')
-    if(code == 200) {
-      response = JSON.parse(response)
-      response.map(a => {
-        return new user(a)
-      })
-    } else {
-      return response;
-    }
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'user/followers?amount=50&userid=' + this.userData._id, 'GET')
+      if(code == 200) {
+        response = JSON.parse(response)
+        res(response.map(a => {
+          return new user(a)
+        }))
+      } else {
+        res(response);
+      }
+    })
   }
   async parsedFollowing() {
-    let [code, response] = await sendRequest(serverURL + 'user/following?amount=50&userid=' + this.userData._id, 'GET')
-    if(code == 200) {
-      response = JSON.parse(response)
-      response.map(a => {
-        return new user(a)
-      })
-    } else {
-      return response;
-    }
+    return new Promise(async (res, rej) => {
+      let [code, response] = await sendRequest(serverURL + 'user/following?amount=50&userid=' + this.userData._id, 'GET')
+      if(code == 200) {
+        response = JSON.parse(response)
+        res(response.map(a => {
+          return new user(a)
+        }))
+      } else {
+        res(response);
+      }
+    })
   }
 
   async on(type, data) {
@@ -1139,15 +1161,17 @@ class group {
   }
 
   async getUsers() {
-    let [code, response] = await sendRequest(serverURL + 'groups/members?groupid=' + this.groupData._id, 'GET')
-    if(code == 200) {
-      response = JSON.parse(response)
-      return response.map(a => {
-        return new user(a)
-      })
-    } else {
-      return response;
-    }
+    return new Promise(async(res, res) => {
+      let [code, response] = await sendRequest(serverURL + 'groups/members?groupid=' + this.groupData._id, 'GET')
+      if(code == 200) {
+        response = JSON.parse(response)
+        res(response.map(a => {
+          return new user(a)
+        }))
+      } else {
+        res(response);
+      }
+    })
   }
   async kick(userid) {
     let [_, response] = await sendRequest(serverURL + 'groups/moderate?groupid=' + this.groupData._id, 'PUT', {
