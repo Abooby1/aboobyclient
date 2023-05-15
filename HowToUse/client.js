@@ -2,36 +2,24 @@ client.on(type, function() {
   //main listener function | check on.js for properties
 })
 
-client.onPost(post => {
-  //listen for posts | go to onPost.js for properties
+client.post("text", {//posts in the home page if no groupid is given
+  images: [],
+  groupid: ""
 })
-
-client.onDelete(deleteAction => {
-  //listen for deletion | posts and chats | go to onDelete.js for properties
+client.createGroup({
+  name: "",
+  inviteType: "member|owner",
+  image: ""
 })
-
-client.onInvite(invite => {
-  //when someone invites to a group, data will be given | go to invite.js for properties
-})
-
-client.onMention(mention => {
-   //when someone mentions your bot, itll send data | go to onMention.js for properties
-})
-
-client.onReady(ready => {
-  console.log(ready)
-  //logs "Ready!" when your bot is up and running
-})
-
-client.notify('userid', {
-  title: 'bot notification',
-  content: 'this uses BetterPhotop, if a user isnt using BetterPhotop it wont work'
-})
-
-client.post('text', 'group', ['images'])//posts in the home page if no groupid is given
 
 client.getPostById("postid").then(callback => {
   //returns post data in callback
+})
+client.getChatById("chatid").then(callback => {
+  //returns chat data in callback
+})
+client.getBlocked().then(callback => {
+  //returns array of users that bot has blocked
 })
 client.getUserById("userid").then(callback => {
   //returns user data by id in callback
@@ -42,20 +30,20 @@ client.getUserByName("username").then(callback => {
 client.getGroupById("groupid").then(callback => {
   //returns group data in callback
 })
-
-client.postCache//returns an array containing post data cached with post.cache()
-
-client.userData().then(callback => {
-  callback.user//returns bot userdata
-  callback.getPosts().then(posts => {
-    //returns an array containing up to 100 posts made by the bot
-  })
-  callback.getGroups().then(groups => {
-    //returns an array containing groups
-  })
+client.getUsers("term").then(callback => {
+  //returns array of users that match the term
 })
 
-client.joinGroup("groupid")//joins the group if bot is invited
+client.groupInvites().then(callback => {
+  //returns array of group invites
+})
+client.joinGroup({//will join group if valid code/groupid invite
+  code: "optional",
+  groupid: "optional"
+})
+client.leaveGroup("groupid")//will leave the group given if joined
+
+client.postCache//returns an array containing post data cached with post.cache()
 
 client.deletePost("postid")//deletes the post given
 client.deleteChat("chatid")//deletes the chat given
@@ -66,8 +54,4 @@ client.updateVisibility("new visibility | 'public', 'private', 'following'")//ch
 client.updateProfilePic("./aboobyclient.png")//changes the bots profile picture, file is needed
 client.updateBanner("./aboobyclient.png")//changes the bots banner, file is needed
 
-await client.createDatabase()//create a database straight from aboobyclient (has some default values) | check db.js for more information
-client.reconnect(post => {
-  //connects to posts you connected if database is connected with "client.createDatabase()" | Auto connects to chats and gives post information, see post.js for post properties
-  post.chat("Im now reconnected to this post!")
-})
+client.unbanUser("userid")//will unban user if permissions are valid
