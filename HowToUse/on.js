@@ -1,24 +1,18 @@
 //client
-"post" // listener for posts at home page | the "client.on" callback will need two params: one for the post data and one for the groupid; "client.on("post", function(post, groupid){})" | onPost.js
-"invite" // listener for group invites | onInvite.js
-"mention" // listener for mentions in posts | onMention.js
+"post" // listener for posts at home page
+"invite" // listener for group invites
 "ready" // listener for when the client initializes
-"delete" // listener for when any content is deleted | onDelete.js
-"cache" // listener for when post.cache() is ran
-"newFollower" // listener for when client is followed
-"unfollow" // listener for when client is unfollowed
-
-//user
-"newFollower" // listener for when user is followed
-"unfollow" // listener for when user is unfollowed
 
 //post
-"chat" // listener for when a chat is made on post | onChat.js
-"like" // listener for when a post is liked | onLike.js
-"edit" // listener for when a post is edited | onEdit.js
+"chat" // listener for when a chat is made on the post
+"like" // listener for when the post is liked
+"dislike" //listener for when a like is removed from a post
+"edit" // listener for when the post is edited
+"delete" //listener for when the post is deleted
 
 //chat
-"edit" // listener for when a chat is edited | onEdit.js
+"edit" // listener for when the chat is edited
+"delete" //listener for when the chat is deleted
 
 //group
-"newMember" // listener for when a member joins the group
+"post" // listens for posts in a group
