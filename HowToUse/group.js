@@ -5,15 +5,27 @@ client.getGroupById("6335c42a3402fdba72620e37").then(group => {
   group.getUsers(users => {
     //returns array of users in group
   })
+  group.invites(invites => {
+    //returns array of invites in group
+  })
   
   group.on(type, function() {
     //main listener for group | check on.js for properties
   })
+  
+  group.post("text", {
+    images: []
+  })
 
   group.leave()//leave the given group
   group.invite("userid")//invite someone to the group
-  group.edit({
-    name: 'new name of the group',//optional
-    invite: 'invite type of the group | either "members" or "owner"'//optional
+  group.createLink()//create a link code for the group
+
+  //permission needed
+  group.edit({//edits the group settings
+    name: "",
+    inviteType: "member|owner",
+    image: ""
   })
+  group.kick("userid")
 })
